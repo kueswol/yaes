@@ -1,8 +1,17 @@
-use rand::Rng;
+use super::creature::Dna;
 
-/// ---------------------------------------------------------------------------------------------------------
-/// Evolvierbare Struktur (Genom)
-/// ---------------------------------------------------------------------------------------------------------
+pub const NEURON_HIDDEN1_MASK_OFFSET: u8 = 0;
+pub const NEURON_HIDDEN2_MASK_OFFSET: u8 = 24;
+pub const NEURON_OUTPUT_MASK_OFFSET : u8 = 24;
+pub const NEURON_HIDDEN1_MASK_SCOPE: u64 = 0b00000000_00000000_00000000_00000000_00000000_11111111_11111111_11111111;
+pub const NEURON_HIDDEN2_MASK_SCOPE: u64 = 0b00000000_00000000_11111111_11111111_11111111_00000000_00000000_00000000;
+pub const NEURON_OUTPUT_MASK_SCOPE : u64 = 0b11111111_11111111_11111111_11111111_11111111_00000000_00000000_00000000;
+pub const NEURON_HIDDEN1_TARGET_OFFSET: u8 = 24;
+pub const NEURON_HIDDEN2_TARGET_OFFSET: u8 = 48;
+pub const NEURON_OUTPUT_TARGET_OFFSET : u8 = 0;
+// pub const BIT_OFFSET_HIDDEN1: u8 = 16;
+// pub const BIT_OFFSET_HIDDEN2: u8 = 32;
+// pub const BIT_OFFSET_OUTPUTS: u8 = 48;
 
 #[derive(Clone, Copy)]
 pub enum NeuronKind {
@@ -11,28 +20,17 @@ pub enum NeuronKind {
     Output,
 }
 
+/// ---------------------------------------------------------------------------------------------------------
+/// Evolvierbare Struktur (Genom)
+/// ---------------------------------------------------------------------------------------------------------
+
+
 #[derive(Clone)]
 pub struct GeneNeuron {
     pub mask: u64,
     pub threshold: u8,
     pub kind: NeuronKind,
-    pub target_bit: u8, // wohin wird geschrieben?
-}
-
-impl GeneNeuron {
-    pub fn mutate(&mut self, rng: &mut impl Rng) {
-        // Mutation: zufällige Änderung von Maske, Schwelle oder Zielbit
-        if rng.gen_bool(0.1) { // 10% Chance für Mutation
-            self.mask ^= 1 << rng.gen_range(0..64); // Flippe ein zufälliges Bit in der Maske
-        }
-        if rng.gen_bool(0.1) {
-            let delta: i8 = if rng.gen_bool(0.5) { 1 } else { -1 };
-            self.threshold = self.threshold.saturating_add_signed(delta);
-        }
-        if rng.gen_bool(0.05) {
-            self.target_bit = (self.target_bit + rng.gen_range(1..5)) % 64; // Ändere das Zielbit
-        }
-    }
+    pub target_bit: u8,
 }
 
 #[derive(Clone)]
@@ -47,29 +45,68 @@ impl Genome {
         }
     }
 
-    /// Fügt ein neues Neuron hinzu (Mutation)
-    pub fn add_neuron(&mut self, mask: u64, threshold: u8, kind: NeuronKind,target_bit: u8) {
-        self.neurons.push(GeneNeuron {
-            mask,
-            threshold,
-            kind,
-            target_bit,
-        });
+    pub fn from_dna(dna: &Dna) -> Self {
+        let mut neurons = Vec::new();
+
+        for chunk in dna.bytes.chunks_exact(8) {
+            let mut mask_part =
+                (chunk[0] as u64) |
+                ((chunk[1] as u64) << 8) |
+                ((chunk[2] as u64) << 16) |
+                ((chunk[3] as u64) << 24) |
+                ((chunk[4] as u64) << 32);
+            if mask_part == 0 {
+                mask_part = 1 << (chunk[0] % 8);
+            }
+
+            let kind = match chunk[5] % 5 {
+                0 => NeuronKind::Hidden1,
+                1 => NeuronKind::Hidden1,
+                2 => NeuronKind::Hidden2,
+                3 => NeuronKind::Hidden2,
+                _ => NeuronKind::Output,
+            };
+            
+            // let threshold = (chunk[6] % 16) + 1;
+            let threshold = match kind {
+                NeuronKind::Hidden1 => (chunk[6] % (NEURON_HIDDEN1_MASK_SCOPE.count_ones() / 4) as u8) + 1,
+                NeuronKind::Hidden2 => (chunk[6] % (NEURON_HIDDEN2_MASK_SCOPE.count_ones() / 4) as u8) + 1,
+                NeuronKind::Output  => (chunk[6] % (NEURON_OUTPUT_MASK_SCOPE.count_ones()  / 4) as u8) + 1,
+            };
+
+            // let target_bit = chunk[7] % 64;
+            let target_bit = match kind {
+                NeuronKind::Hidden1 => chunk[7] % NEURON_HIDDEN2_MASK_SCOPE.count_ones() as u8,
+                NeuronKind::Hidden2 => chunk[7] % NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
+                // NeuronKind::Output  => chunk[7] % NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
+                NeuronKind::Output  => (chunk[7] % 32) + 1,
+            };
+
+            neurons.push(GeneNeuron {
+                mask: mask_part,
+                threshold,
+                kind,
+                target_bit,
+            });
+        }
+
+        Self { neurons }
     }
 
-    pub fn mutate(&mut self, rng: &mut impl Rng) {
-        for neuron in self.neurons.iter_mut() {
-            neuron.mutate(rng);
-        }
-    }
+    // /// Fügt ein neues Neuron hinzu (Mutation)
+    // pub fn add_neuron(&mut self, mask: u64, threshold: u8, kind: NeuronKind,target_bit: u8) {
+    //     self.neurons.push(GeneNeuron {
+    //         mask,
+    //         threshold,
+    //         kind,
+    //         target_bit,
+    //     });
+    // }
 }
 
 /// ---------------------------------------------------------------------------------------------------------
 /// Optimierte Runtime-Struktur
 /// ---------------------------------------------------------------------------------------------------------
-pub const BIT_OFFSET_HIDDEN1: u8 = 16;
-pub const BIT_OFFSET_HIDDEN2: u8 = 32;
-pub const BIT_OFFSET_OUTPUTS: u8 = 48;
 
 #[derive(Clone, Copy)]
 pub struct ExecNeuron {
@@ -99,13 +136,21 @@ impl Brain {
 
         for gene in &genome.neurons {
             let exec = ExecNeuron {
-                mask: gene.mask,
+                mask: (gene.mask << match gene.kind {
+                    NeuronKind::Hidden1 => NEURON_HIDDEN1_MASK_OFFSET,
+                    NeuronKind::Hidden2 => NEURON_HIDDEN2_MASK_OFFSET,
+                    NeuronKind::Output => NEURON_OUTPUT_MASK_OFFSET,
+                }) & match gene.kind {
+                    NeuronKind::Hidden1 => NEURON_HIDDEN1_MASK_SCOPE,
+                    NeuronKind::Hidden2 => NEURON_HIDDEN2_MASK_SCOPE,
+                    NeuronKind::Output => NEURON_OUTPUT_MASK_SCOPE,
+                },
                 threshold: gene.threshold,
                 kind: gene.kind,
                 target_bit: gene.target_bit + match gene.kind {
-                    NeuronKind::Hidden1 => BIT_OFFSET_HIDDEN1,
-                    NeuronKind::Hidden2 => BIT_OFFSET_HIDDEN2,
-                    NeuronKind::Output => BIT_OFFSET_OUTPUTS,
+                    NeuronKind::Hidden1 => NEURON_HIDDEN1_TARGET_OFFSET,
+                    NeuronKind::Hidden2 => NEURON_HIDDEN2_TARGET_OFFSET,
+                    NeuronKind::Output => NEURON_OUTPUT_TARGET_OFFSET,
                 },
             };
 
@@ -125,12 +170,14 @@ impl Brain {
 
     /// Führt einen Tick aus
     /// input: bitkodierte Sensorwerte
-    /// outputs: 16 least significant bits of a u64
-    ///     ---- ---- ---- ----
-    ///     val3 val2 val1 act.
-    pub fn tick(&self, input: u64) -> u64 {
+    /// outputs: 32 least significant bits of a u64
+    ///     |--------|--------|--------|--------|
+    ///     | value3 | value2 | value1 | action |
+    /// second return value is the count of neurons that fired in this tick
+    pub fn tick(&self, input: u64) -> (u64, u32) {
         const DEBUG_OUTPUT: bool = false;
-        let mut state = input;
+        let mut fired_count: u32 = 0;
+        let mut state: u64 = input;
         
         if DEBUG_OUTPUT {
             println!("--- Brain Tick ----------------------------------------------------------");
@@ -143,6 +190,7 @@ impl Brain {
             let sum = active.count_ones() as u8;
 
             let fire = (sum >= neuron.threshold) as u64;
+            fired_count += fire as u32;
             state |= fire << (neuron.target_bit & 63);
             
             if DEBUG_OUTPUT {
@@ -157,6 +205,7 @@ impl Brain {
             let sum = active.count_ones() as u8;
 
             let fire = (sum >= neuron.threshold) as u64;
+            fired_count += fire as u32;
             state |= fire << (neuron.target_bit & 63);
             
             if DEBUG_OUTPUT {
@@ -173,6 +222,7 @@ impl Brain {
             let sum = active.count_ones() as u8;
             
             let fire = (sum >= neuron.threshold) as u64;
+            fired_count += fire as u32;
             output_bits |= fire << (neuron.target_bit & 63);
 
             if DEBUG_OUTPUT {
@@ -182,13 +232,16 @@ impl Brain {
             }
         }
 
-        output_bits >> BIT_OFFSET_OUTPUTS // shift the most significant bits reflecting the actual output down
+        (
+            output_bits >> NEURON_OUTPUT_TARGET_OFFSET, // shift the most significant bits reflecting the actual output down
+            fired_count
+        )
     }
 
     #[allow(dead_code)]
     fn format_u64(&self, my_u64: &u64) -> String {
         let b = format!("{:064b}", my_u64); 
-        format!("{} {} | {} {} {} {} | {} {}", &b[0..8], &b[8..16], &b[16..24], &b[24..32], &b[32..40], &b[40..48], &b[48..56], &b[56..64])
+        format!("{} {} | {} {} {} | {} {} {}", &b[0..8], &b[8..16], &b[16..24], &b[24..32], &b[32..40], &b[40..48], &b[48..56], &b[56..64])
     }
 }
 
