@@ -1,17 +1,5 @@
 use super::creature::Dna;
-
-pub const NEURON_HIDDEN1_MASK_OFFSET: u8 = 0;
-pub const NEURON_HIDDEN2_MASK_OFFSET: u8 = 24;
-pub const NEURON_OUTPUT_MASK_OFFSET : u8 = 24;
-pub const NEURON_HIDDEN1_MASK_SCOPE: u64 = 0b00000000_00000000_00000000_00000000_00000000_11111111_11111111_11111111;
-pub const NEURON_HIDDEN2_MASK_SCOPE: u64 = 0b00000000_00000000_11111111_11111111_11111111_00000000_00000000_00000000;
-pub const NEURON_OUTPUT_MASK_SCOPE : u64 = 0b11111111_11111111_11111111_11111111_11111111_00000000_00000000_00000000;
-pub const NEURON_HIDDEN1_TARGET_OFFSET: u8 = 24;
-pub const NEURON_HIDDEN2_TARGET_OFFSET: u8 = 48;
-pub const NEURON_OUTPUT_TARGET_OFFSET : u8 = 0;
-// pub const BIT_OFFSET_HIDDEN1: u8 = 16;
-// pub const BIT_OFFSET_HIDDEN2: u8 = 32;
-// pub const BIT_OFFSET_OUTPUTS: u8 = 48;
+use crate::constants as c;
 
 #[derive(Clone, Copy)]
 pub enum NeuronKind {
@@ -20,9 +8,9 @@ pub enum NeuronKind {
     Output,
 }
 
-/// ---------------------------------------------------------------------------------------------------------
-/// Evolvierbare Struktur (Genom)
-/// ---------------------------------------------------------------------------------------------------------
+/// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+/// evolvable structure
+/// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 #[derive(Clone)]
@@ -45,6 +33,8 @@ impl Genome {
         }
     }
 
+    /******************************************************************************************************************************************/
+    /// Constructor: builds a genome from a DNA sequence
     pub fn from_dna(dna: &Dna) -> Self {
         let mut neurons = Vec::new();
 
@@ -69,16 +59,16 @@ impl Genome {
             
             // let threshold = (chunk[6] % 16) + 1;
             let threshold = match kind {
-                NeuronKind::Hidden1 => (chunk[6] % (NEURON_HIDDEN1_MASK_SCOPE.count_ones() / 4) as u8) + 1,
-                NeuronKind::Hidden2 => (chunk[6] % (NEURON_HIDDEN2_MASK_SCOPE.count_ones() / 4) as u8) + 1,
-                NeuronKind::Output  => (chunk[6] % (NEURON_OUTPUT_MASK_SCOPE.count_ones()  / 4) as u8) + 1,
+                NeuronKind::Hidden1 => (chunk[6] % (c::NEURON_HIDDEN1_MASK_SCOPE.count_ones() / 4) as u8) + 1,
+                NeuronKind::Hidden2 => (chunk[6] % (c::NEURON_HIDDEN2_MASK_SCOPE.count_ones() / 4) as u8) + 1,
+                NeuronKind::Output  => (chunk[6] % (c::NEURON_OUTPUT_MASK_SCOPE.count_ones()  / 4) as u8) + 1,
             };
 
             // let target_bit = chunk[7] % 64;
             let target_bit = match kind {
-                NeuronKind::Hidden1 => chunk[7] % NEURON_HIDDEN2_MASK_SCOPE.count_ones() as u8,
-                NeuronKind::Hidden2 => chunk[7] % NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
-                // NeuronKind::Output  => chunk[7] % NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
+                NeuronKind::Hidden1 => chunk[7] % c::NEURON_HIDDEN2_MASK_SCOPE.count_ones() as u8,
+                NeuronKind::Hidden2 => chunk[7] % c::NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
+                // NeuronKind::Output  => chunk[7] % c::NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
                 NeuronKind::Output  => (chunk[7] % 32) + 1,
             };
 
@@ -92,21 +82,11 @@ impl Genome {
 
         Self { neurons }
     }
-
-    // /// Fügt ein neues Neuron hinzu (Mutation)
-    // pub fn add_neuron(&mut self, mask: u64, threshold: u8, kind: NeuronKind,target_bit: u8) {
-    //     self.neurons.push(GeneNeuron {
-    //         mask,
-    //         threshold,
-    //         kind,
-    //         target_bit,
-    //     });
-    // }
 }
 
-/// ---------------------------------------------------------------------------------------------------------
-/// Optimierte Runtime-Struktur
-/// ---------------------------------------------------------------------------------------------------------
+/// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+/// runtime structure
+/// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Copy)]
 pub struct ExecNeuron {
@@ -124,11 +104,14 @@ pub struct Brain {
 }
 
 impl Brain {
+    /******************************************************************************************************************************************/
+    /// Constructor
     pub fn new() -> Brain {
         Self::recompile(&Genome::new())
     }
-   
-    /// "Compiler": wandelt Genome → Runtime Brain
+    
+    /******************************************************************************************************************************************/
+    /// "Compiler": builds the brain based on a genome
     pub fn recompile(genome: &Genome) -> Self {
         let mut hidden1 = Vec::new();
         let mut hidden2 = Vec::new();
@@ -137,20 +120,20 @@ impl Brain {
         for gene in &genome.neurons {
             let exec = ExecNeuron {
                 mask: (gene.mask << match gene.kind {
-                    NeuronKind::Hidden1 => NEURON_HIDDEN1_MASK_OFFSET,
-                    NeuronKind::Hidden2 => NEURON_HIDDEN2_MASK_OFFSET,
-                    NeuronKind::Output => NEURON_OUTPUT_MASK_OFFSET,
+                    NeuronKind::Hidden1 => c::NEURON_HIDDEN1_MASK_OFFSET,
+                    NeuronKind::Hidden2 => c::NEURON_HIDDEN2_MASK_OFFSET,
+                    NeuronKind::Output  => c::NEURON_OUTPUT_MASK_OFFSET,
                 }) & match gene.kind {
-                    NeuronKind::Hidden1 => NEURON_HIDDEN1_MASK_SCOPE,
-                    NeuronKind::Hidden2 => NEURON_HIDDEN2_MASK_SCOPE,
-                    NeuronKind::Output => NEURON_OUTPUT_MASK_SCOPE,
+                    NeuronKind::Hidden1 => c::NEURON_HIDDEN1_MASK_SCOPE,
+                    NeuronKind::Hidden2 => c::NEURON_HIDDEN2_MASK_SCOPE,
+                    NeuronKind::Output  => c::NEURON_OUTPUT_MASK_SCOPE,
                 },
                 threshold: gene.threshold,
                 kind: gene.kind,
                 target_bit: gene.target_bit + match gene.kind {
-                    NeuronKind::Hidden1 => NEURON_HIDDEN1_TARGET_OFFSET,
-                    NeuronKind::Hidden2 => NEURON_HIDDEN2_TARGET_OFFSET,
-                    NeuronKind::Output => NEURON_OUTPUT_TARGET_OFFSET,
+                    NeuronKind::Hidden1 => c::NEURON_HIDDEN1_TARGET_OFFSET,
+                    NeuronKind::Hidden2 => c::NEURON_HIDDEN2_TARGET_OFFSET,
+                    NeuronKind::Output  => c::NEURON_OUTPUT_TARGET_OFFSET,
                 },
             };
 
@@ -168,8 +151,9 @@ impl Brain {
         }
     }
 
-    /// Führt einen Tick aus
-    /// input: bitkodierte Sensorwerte
+    /******************************************************************************************************************************************/
+    /// a brain tick
+    /// input: bitmap of sensory inputs
     /// outputs: 32 least significant bits of a u64
     ///     |--------|--------|--------|--------|
     ///     | value3 | value2 | value1 | action |
@@ -233,11 +217,13 @@ impl Brain {
         }
 
         (
-            output_bits >> NEURON_OUTPUT_TARGET_OFFSET, // shift the most significant bits reflecting the actual output down
+            output_bits >> c::NEURON_OUTPUT_TARGET_OFFSET, // shift the most significant bits reflecting the actual output down
             fired_count
         )
     }
 
+    /******************************************************************************************************************************************/
+    /// helper for debug output
     #[allow(dead_code)]
     fn format_u64(&self, my_u64: &u64) -> String {
         let b = format!("{:064b}", my_u64); 

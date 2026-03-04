@@ -1,5 +1,6 @@
 use crate::utils::{Coordinate, CreatureAction, CreatureEvent};
 use super::brain::{Brain, Genome};
+use crate::constants as c;
 use rand::Rng;
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -12,6 +13,8 @@ pub struct Dna {
 }
 
 impl Dna {
+    /******************************************************************************************************************************************/
+    /// creates a random DNA sequence of the given length (in bytes)
     pub fn random(len: usize, rng: &mut impl Rng) -> Self {
         let mut bytes = Vec::new();
 
@@ -33,6 +36,8 @@ impl Dna {
         Self { bytes }
     }
 
+    /******************************************************************************************************************************************/
+    /// mutates the DNA by randomly flipping bits, inserting new genes, or deleting existing genes
     pub fn mutate(&mut self, rng: &mut impl Rng) {
         // some bit wise mutations
         for byte in &mut self.bytes {
@@ -78,22 +83,6 @@ pub struct Creature {
     genome    : Genome,
     brain     : Brain,
 }
-
-pub const OUTPUT_ACTION_MASK  : u64 = 0b00000000_00000000_00000000_11111111;
-pub const OUTPUT_VALUE1_MASK  : u64 = 0b00000000_00000000_11111111_00000000;
-pub const OUTPUT_VALUE2_MASK  : u64 = 0b00000000_11111111_00000000_00000000;
-pub const OUTPUT_VALUE3_MASK  : u64 = 0b11111111_00000000_00000000_00000000;
-// pub const OUTPUT_VALUE1_OFFSET: u8  =  4;
-// pub const OUTPUT_VALUE2_OFFSET: u8  =  8;
-// pub const OUTPUT_VALUE3_OFFSET: u8  = 12;
-
-pub const ENERGY_COST_SLEEP: f32 = 5.1;
-pub const ENERGY_COST_REPRODUCE: f32 = 50.0;
-pub const ENERGY_COST_MOVE: f32 = 1.5;
-pub const ENERGY_COST_FIRED_NEURON: f32 = 0.005;
-
-pub const REPRODUCE_AGE_MIN: u32 = 20;
-pub const REPRODUCE_AGE_MAX: u32 = 80;
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 /// public methods for Creature
@@ -168,7 +157,7 @@ impl Creature {
     pub fn think_and_act(&mut self) -> CreatureEvent {
         
         self.age += 1;
-        self.can_reproduce = REPRODUCE_AGE_MIN <= self.age && self.age <= REPRODUCE_AGE_MAX && self.energy >= ENERGY_COST_REPRODUCE;
+        self.can_reproduce = c::REPRODUCE_AGE_MIN <= self.age && self.age <= c::REPRODUCE_AGE_MAX && self.energy >= c::ENERGY_COST_REPRODUCE;
 
         // die, if the energy is depleted
         if self.energy <= 0.0 || self.age >= 100 {
@@ -183,12 +172,12 @@ impl Creature {
         let (action, _value1, _value2, _value3) = Self::decode_output(tick_output);
 
         // firing neurons do cost energy
-        self.energy -= _fired_count as f32 * ENERGY_COST_FIRED_NEURON;
+        self.energy -= _fired_count as f32 * c::ENERGY_COST_FIRED_NEURON;
 
         match action {
             CreatureAction::Sleep => {
                 self.last_action = CreatureAction::Sleep;
-                if self.energy > 0.1 { self.energy -= ENERGY_COST_SLEEP; }
+                if self.energy > 0.1 { self.energy -= c::ENERGY_COST_SLEEP; }
             }
             CreatureAction::Move => {
                 // _value1: LSB of direction
@@ -202,7 +191,7 @@ impl Creature {
                         x: self.pos.x + speed * direction.cos(),
                         y: self.pos.y + speed * direction.sin(),
                     };
-                    // do the move if the new position is within bounds
+                    // do the move if the new position is within bounds, but limit it to the world borders
                     if new_pos.x < 0.0   { new_pos.x = 0.0;   }
                     if new_pos.x > 100.0 { new_pos.x = 100.0; }
                     if new_pos.y < 0.0   { new_pos.y = 0.0;   }
@@ -210,11 +199,11 @@ impl Creature {
                     
                     if new_pos.x >= 0.0 && new_pos.x <= 100.0 {
                         self.pos.x = new_pos.x;
-                        self.energy -= ENERGY_COST_MOVE / 2.0;
+                        self.energy -= c::ENERGY_COST_MOVE / 2.0;
                     }   
                     if new_pos.y >= 0.0 && new_pos.y <= 100.0 {
                         self.pos.y = new_pos.y;
-                        self.energy -= ENERGY_COST_MOVE / 2.0;
+                        self.energy -= c::ENERGY_COST_MOVE / 2.0;
                     }   
                 }
             }
@@ -227,15 +216,15 @@ impl Creature {
             }
             CreatureAction::Reproduce => {
                 self.last_action = CreatureAction::Reproduce;
-                if self.can_reproduce && self.energy >= ENERGY_COST_REPRODUCE {
+                if self.can_reproduce && self.energy >= c::ENERGY_COST_REPRODUCE {
                     self.can_reproduce = false;
-                    self.energy -= ENERGY_COST_REPRODUCE;
+                    self.energy -= c::ENERGY_COST_REPRODUCE;
                     return_event = CreatureEvent::Reproduce;
                 }
             }
             _ => {
                 self.last_action = CreatureAction::Idle;
-                self.energy -= 10.0;
+                self.energy -= c::ENERGY_COST_IDLE;
             }
         }
 
@@ -302,12 +291,12 @@ impl Creature {
     #[inline(always)]
 	fn decode_output(output: u64) -> (CreatureAction, u8, u8, u8) {
 		// ---- Parameter extrahieren ----
-		let value1 = ((output & OUTPUT_VALUE1_MASK) >> OUTPUT_VALUE1_MASK.trailing_zeros()) as u8;
-		let value2 = ((output & OUTPUT_VALUE2_MASK) >> OUTPUT_VALUE2_MASK.trailing_zeros()) as u8;
-		let value3 = ((output & OUTPUT_VALUE3_MASK) >> OUTPUT_VALUE3_MASK.trailing_zeros()) as u8;
+		let value1 = ((output & c::OUTPUT_VALUE1_MASK) >> c::OUTPUT_VALUE1_MASK.trailing_zeros()) as u8;
+		let value2 = ((output & c::OUTPUT_VALUE2_MASK) >> c::OUTPUT_VALUE2_MASK.trailing_zeros()) as u8;
+		let value3 = ((output & c::OUTPUT_VALUE3_MASK) >> c::OUTPUT_VALUE3_MASK.trailing_zeros()) as u8;
 
 		// ---- Aktionsbits extrahieren ----
-		let action_bits = (output & OUTPUT_ACTION_MASK) as u8;
+		let action_bits = (output & c::OUTPUT_ACTION_MASK) as u8;
 
 		let action = if action_bits == 0 {
 			CreatureAction::Idle
@@ -364,7 +353,7 @@ impl ToString for Creature {
     fn to_string(&self) -> String {
         let (action, value1, value2, value3) = Self::decode_output(self.last_output);
         format!(
-            "{}{:<20}, age: {:3}, energy: {:5.1}%, pos:[{:5.01}|{:5.01}], sensor: {:5}, last_output: {:5} ({:<9?}|{}|{}|{})\x1b[0m",
+            "{}{:<20}, age: {:3}, energy: {:5.1}%, pos:[{:5.01}|{:5.01}], sensor: {:5}, last_output: {:12} ({:<9?}|{}|{}|{})\x1b[0m",
             self.color, self.name, self.age, self.energy, self.pos.x, self.pos.y, self.sensors_to_bits(), self.last_output, action, value1, value2, value3
         )
     }
