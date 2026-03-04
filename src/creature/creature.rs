@@ -2,6 +2,7 @@ use crate::utils::{Coordinate, CreatureAction, CreatureEvent};
 use super::brain::{Brain, Genome};
 use crate::constants as c;
 use rand::Rng;
+use base64::{engine::general_purpose, Engine as _};
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 /// DNA
@@ -15,19 +16,27 @@ pub struct Dna {
 impl Dna {
     /******************************************************************************************************************************************/
     /// creates a random DNA sequence of the given length (in bytes)
-    pub fn random(len: usize, rng: &mut impl Rng) -> Self {
+    pub fn random(length: usize, rng: &mut impl Rng) -> Self {
         let mut bytes = Vec::new();
 
-        bytes.extend_from_slice(&[
-            0b00000001, // mask low byte
-            0,
-            0,
-            0,
-            0,
-            4,          // Output
-            0,          // threshold source
-            0,          // target source
-        ]);
+        // we added chunks of 8 bytes to encode some output genes which trigger actions
+        // as a scaffold for the evolution to find useful actions more easily, but this is optional and can be removed for a more free-form evolution
+        for target_bit in 0..4 {
+            bytes.extend_from_slice(&[
+                rng.gen_range(0..=0xFF),  // mask byte 0
+                rng.gen_range(0..=0xFF),  // mask byte 1
+                rng.gen_range(0..=0xFF),  // mask byte 2
+                rng.gen_range(0..=0xFF),  // mask byte 3
+                rng.gen_range(0..=0xFF),  // mask byte 4
+                4,                        // kind "Output"
+                rng.gen_range(5..=12),    // threshold
+                target_bit as u8,         // target_bit (used in `(chunk[7] % 32) + 1)`)
+            ]);
+        }
+
+        // we've used 32 bytes for the scaffold genes, so we need to subtract that from the random part of the DNA
+        let mut len: usize = 128 - 32;
+        if length > len { len = length - 32; }
 
         let mut random_bytes = vec![0u8; len];
         rng.fill(&mut random_bytes[..]);
@@ -62,12 +71,49 @@ impl Dna {
             self.bytes.drain(start..start + 8);
         }
     }
+
+    /******************************************************************************************************************************************/
+    /// base64 encode the DNA for a more compact representation
+    pub fn to_compact_string(&self) -> String {
+        general_purpose::STANDARD_NO_PAD.encode(&self.bytes)
+    }
+
+    /******************************************************************************************************************************************/
+    /// define the DNA from a base64 encoded string
+    pub fn from_compact_string(s: &str) -> Self {
+        let bytes = general_purpose::STANDARD_NO_PAD
+            .decode(s)
+            .expect("Invalid DNA string");
+
+        Self { bytes }
+    }
 }
 
+impl ToString for Dna {
+    fn to_string(&self) -> String {
+        let mut result = String::new();
+
+        for (i, chunk) in self.bytes.chunks(32).enumerate() {
+            result.push_str(&format!("G{:03}: ", i));
+
+            for byte in chunk {
+                result.push_str(&format!("{:02X}", byte));
+            }
+
+            if chunk.len() == 32 {
+                result.push('\n');
+            } else {
+                result.push_str("(incomplete)\n");
+            }
+        }
+
+        result
+    }
+}
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 /// Creature
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
+#[derive(Clone)]
 pub struct Creature {
     pub dna   : Dna,
     pub name  : String,
@@ -105,7 +151,7 @@ impl Creature {
         // }
 
         
-        let new_dna: Dna = Dna::random(1024, rng);
+        let new_dna: Dna = Dna::random(256, rng);
         let new_genome: Genome = Genome::from_dna(&new_dna);
         let new_brain: Brain = Brain::recompile(&new_genome);
 
@@ -160,7 +206,7 @@ impl Creature {
         self.can_reproduce = c::REPRODUCE_AGE_MIN <= self.age && self.age <= c::REPRODUCE_AGE_MAX && self.energy >= c::ENERGY_COST_REPRODUCE;
 
         // die, if the energy is depleted
-        if self.energy <= 0.0 || self.age >= 100 {
+        if self.energy <= 0.0 || self.age >= c::CREATURE_MAX_AGE {
             self.alive = false;
             return CreatureEvent::Die;
         }
@@ -175,10 +221,12 @@ impl Creature {
         self.energy -= _fired_count as f32 * c::ENERGY_COST_FIRED_NEURON;
 
         match action {
+            
             CreatureAction::Sleep => {
                 self.last_action = CreatureAction::Sleep;
                 if self.energy > 0.1 { self.energy -= c::ENERGY_COST_SLEEP; }
             }
+            
             CreatureAction::Move => {
                 // _value1: LSB of direction
                 // _value2: MSB of direction
@@ -186,7 +234,7 @@ impl Creature {
                 self.last_action = CreatureAction::Move;
                 if self.energy > 0.2 {
                     let direction = (_value1 as u16 | (_value2 as u16) << 8) as f32 / 255.0 * 360.0;
-                    let speed = _value3 as f32 / 255.0 * 10.0;
+                    let speed = _value3 as f32 / 255.0 * c::CREATURE_MAX_SPEED;
                     let mut new_pos = Coordinate {
                         x: self.pos.x + speed * direction.cos(),
                         y: self.pos.y + speed * direction.sin(),
@@ -207,6 +255,7 @@ impl Creature {
                     }   
                 }
             }
+
             CreatureAction::Eat => {
                 self.last_action = CreatureAction::Eat;
                 // eat if there is food at the current position (for simplicity: if pos.x and pos.y are both outside of 33 and 66)
@@ -214,6 +263,7 @@ impl Creature {
                     self.energy += 20.0;
                 }
             }
+
             CreatureAction::Reproduce => {
                 self.last_action = CreatureAction::Reproduce;
                 if self.can_reproduce && self.energy >= c::ENERGY_COST_REPRODUCE {
@@ -222,6 +272,7 @@ impl Creature {
                     return_event = CreatureEvent::Reproduce;
                 }
             }
+
             _ => {
                 self.last_action = CreatureAction::Idle;
                 self.energy -= c::ENERGY_COST_IDLE;
@@ -305,10 +356,10 @@ impl Creature {
 			let highest_bit = 7 - action_bits.leading_zeros() as u8;
 
 			match 1 << highest_bit {
-				0b00000001 => CreatureAction::Move,
+				0b00000001 => CreatureAction::Reproduce,
 				0b00000010 => CreatureAction::Sleep,
 				0b00000100 => CreatureAction::Eat,
-				0b00001000 => CreatureAction::Reproduce,
+				0b00001000 => CreatureAction::Move,
 				0b00010000 => CreatureAction::Idle,
 				0b00100000 => CreatureAction::Idle,
 				0b01000000 => CreatureAction::Idle,
@@ -353,8 +404,8 @@ impl ToString for Creature {
     fn to_string(&self) -> String {
         let (action, value1, value2, value3) = Self::decode_output(self.last_output);
         format!(
-            "{}{:<20}, age: {:3}, energy: {:5.1}%, pos:[{:5.01}|{:5.01}], sensor: {:5}, last_output: {:12} ({:<9?}|{}|{}|{})\x1b[0m",
-            self.color, self.name, self.age, self.energy, self.pos.x, self.pos.y, self.sensors_to_bits(), self.last_output, action, value1, value2, value3
+            "{}{:<20}, age: {:3}, energy: {:5.1}%, pos:[{:5.01}|{:5.01}], sensor: {:5}, last_output: {:12} ({:<10?}|{}|{}|{}), brain: {}\x1b[0m",
+            self.color, self.name, self.age, self.energy, self.pos.x, self.pos.y, self.sensors_to_bits(), self.last_output, action, value1, value2, value3, self.brain.to_string()
         )
     }
 }

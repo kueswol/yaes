@@ -3,11 +3,15 @@
 /// GENERAL
 /// ---------------------------------------------------------------------------------------------------------
 
+pub const RNG_WORLD_SEED                : u64   = 42;
+
 /// ---------------------------------------------------------------------------------------------------------
 /// WORLD
 /// ---------------------------------------------------------------------------------------------------------
 
-pub const MAX_POPULATION                : usize = 50000;
+pub const MAX_POPULATION                : usize = 200_000;
+pub const WORLD_WIDTH                   : u32   = 100;
+pub const WORLD_HEIGHT                  : u32   = 100;
 
 /// ---------------------------------------------------------------------------------------------------------
 /// CREATURE
@@ -21,10 +25,13 @@ pub const ENERGY_COST_SLEEP             : f32   = 5.1;
 pub const ENERGY_COST_REPRODUCE         : f32   = 50.0;
 pub const ENERGY_COST_MOVE              : f32   = 1.5;
 pub const ENERGY_COST_FIRED_NEURON      : f32   = 0.005;
-pub const ENERGY_COST_IDLE              : f32   = 0.1;
+pub const ENERGY_COST_IDLE              : f32   = 10.0;
 
 pub const REPRODUCE_AGE_MIN             : u32   = 20;
 pub const REPRODUCE_AGE_MAX             : u32   = 80;
+
+pub const CREATURE_MAX_SPEED            : f32   = 10.0;
+pub const CREATURE_MAX_AGE              : u32   = 300;
 
 /// ---------------------------------------------------------------------------------------------------------
 /// BRAIN

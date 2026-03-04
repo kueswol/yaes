@@ -49,12 +49,16 @@ impl Genome {
                 mask_part = 1 << (chunk[0] % 8);
             }
 
-            let kind = match chunk[5] % 5 {
+            let kind = match chunk[5] % 9 {
                 0 => NeuronKind::Hidden1,
                 1 => NeuronKind::Hidden1,
                 2 => NeuronKind::Hidden2,
                 3 => NeuronKind::Hidden2,
-                _ => NeuronKind::Output,
+                4 => NeuronKind::Output,
+                5 => NeuronKind::Hidden2,
+                6 => NeuronKind::Hidden2,
+                7 => NeuronKind::Hidden1,
+                _ => NeuronKind::Hidden1,
             };
             
             // let threshold = (chunk[6] % 16) + 1;
@@ -69,7 +73,7 @@ impl Genome {
                 NeuronKind::Hidden1 => chunk[7] % c::NEURON_HIDDEN2_MASK_SCOPE.count_ones() as u8,
                 NeuronKind::Hidden2 => chunk[7] % c::NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
                 // NeuronKind::Output  => chunk[7] % c::NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
-                NeuronKind::Output  => (chunk[7] % 32) + 1,
+                NeuronKind::Output  => chunk[7] % 32,
             };
 
             neurons.push(GeneNeuron {
@@ -97,6 +101,7 @@ pub struct ExecNeuron {
     target_bit: u8,
 }
 
+#[derive(Clone)]
 pub struct Brain {
     hidden1: Box<[ExecNeuron]>,
     hidden2: Box<[ExecNeuron]>,

@@ -1,91 +1,55 @@
 pub mod constants;
 pub mod utils;
 pub mod creature;
-use crate::creature::Creature;
-use crate::utils::CreatureEvent;
-use crate::constants as c;
+pub mod world;
+
+use crate::world::World;
+// use crate::constants as c;
 
 use std::thread;
 use std::time::Duration;
 
 fn main() {
     
-    // let test1: u64 = 0b0000_0000_0000_1111;
-    // let test2: u64 = 0b0000_0000_1111_0000;
-    // let test3: u64 = 0b0000_1111_0000_0000;
-    // let test4: u64 = 0b1111_0000_0000_0000;
+    // let mut world = World::new(c::RNG_WORLD_SEED);
+    let mut world = World::default();
 
-    // println!("Test1: {:064b} | {} bits set | {} trailing zeros", test1, test1.count_ones(), test1.trailing_zeros());
-    // println!("Test2: {:064b} | {} bits set | {} trailing zeros", test2, test2.count_ones(), test2.trailing_zeros());
-    // println!("Test3: {:064b} | {} bits set | {} trailing zeros", test3, test3.count_ones(), test3.trailing_zeros());
-    // println!("Test4: {:064b} | {} bits set | {} trailing zeros", test4, test4.count_ones(), test4.trailing_zeros());
-    // return;
+    println!("Creating creatures...");
+    world.spawn_random_creature(500);
     
-    let mut creatures: Vec<Creature> = Vec::new();
-    let mut rng = rand::thread_rng();
+    
+    // println!("{}",world.creatures[0].dna.to_compact_string());
+    // return;
 
-    println!("--- Initializing Creatures -------------------------------------------------");
-    for _ in 0..10 {
-        creatures.push(Creature::default());
-    }
-
-    let mut counter_newborns = 0;
-    let mut counter_deaths = 0;
-
-    println!("--- Starting Simulation -------------------------------------------------");
-    for cycle in 0..5001 {
-        
-        if creatures.len() < 100 {
-            creatures.push(Creature::default());
-        }
-
-        // if cycle < 100 {
-        //     thread::sleep(Duration::from_millis(1000 - (cycle as u64 * 10)));
-        // }
+    println!("Starting simulation...");
+    for _ in 0..50_000 {
+        world.tick();
+        world.print_to_terminal(true,false);
         thread::sleep(Duration::from_millis(5));
-        let mut newborns: Vec<Creature> = Vec::new();
-        
-        for i in 0..creatures.len() {
-            if creatures[i].alive {
-                match creatures[i].think_and_act() {
-                    CreatureEvent::Reproduce => {
-                        let child = Creature::new_from_parent(&creatures[i], &mut rng);
-                        newborns.push(child);
-                        counter_newborns += 1;
-                    }
-                    CreatureEvent::Die => {
-                        // println!("{} died", creatures[i].name);
-                        counter_deaths += 1;
-                    }
-                    _ => {}
-                }
-            }
+        if world.creatures.len() < 1 {
+            // println!("The world is empty. Spawning new creature...");
+            // world.spawn_random_creature(100);
+            break;
         }
-        
-        // remove dead ones, add newborns, limit population
-        creatures.retain(|c| c.alive);
-        creatures.extend(newborns);
-        if creatures.len() > c::MAX_POPULATION {
-            creatures.truncate(c::MAX_POPULATION);
-        }
-
-        // give overview
-        if cycle % 100 == 0 { print_creature_states(&creatures, &cycle, &counter_newborns, &counter_deaths); }
     }
+    println!("Simulation ended.");
+    println!("We had a total of {} newborns and {} deaths during {} cycles.", world.counter_newborns, world.counter_deaths, world.cycle);
 }
 
-fn print_creature_states(creatures: &[Creature], cycle: &usize, counter_newborns: &usize, counter_deaths: &usize) {
-    print!("\x1B[2J\x1B[H"); // clear + cursor home
-    print!("Population: {:5} (", creatures.len());
-    let mut bar: String = String::new();
-    for _ in 0..(creatures.len() / c::MAX_POPULATION * 100) {
-        bar+="-";
-    };println!("{:<100}) with {} newborns and {} deaths", bar, counter_newborns, counter_deaths);
-    println!("Cycle: {:5} / 500", cycle);
-    println!("");
+// give overview
+// if cycle % 100 == 0 { print_creature_states(&creatures, &cycle, &counter_newborns, &counter_deaths); }
+// fn print_creature_states(creatures: &[Creature], cycle: &usize, counter_newborns: &usize, counter_deaths: &usize) {
+//     print!("\x1B[2J\x1B[H"); // clear + cursor home
+//     print!("Population: {:5} (", creatures.len());
+//     let mut bar: String = String::new();
+//     for _ in 0..(creatures.len() / c::MAX_POPULATION * 100) {
+//         bar+="-";
+//     };println!("{:<100}) with {} newborns and {} deaths", bar, counter_newborns, counter_deaths);
+//     println!("Cycle: {:5} / 500", cycle);
+//     println!("");
 
-    // for creature in creatures.iter().take(70) {
-    //     println!("{}", creature.to_string());
-    // }
-    // println!("Cycle: {:5}/5000 | Population: {:5}/{} ({:3}%) | Newborns: {:3} | Deaths: {:7}", cycle, creatures.len(), MAX_POPULATION, creatures.len() * 100 / MAX_POPULATION, counter_newborns, counter_deaths);
-}
+//     // for creature in creatures.iter().take(70) {
+//     //     println!("{}", creature.to_string());
+//     // }
+//     // println!("Cycle: {:5}/5000 | Population: {:5}/{} ({:3}%) | Newborns: {:3} | Deaths: {:7}", cycle, creatures.len(), MAX_POPULATION, creatures.len() * 100 / MAX_POPULATION, counter_newborns, counter_deaths);
+// }
