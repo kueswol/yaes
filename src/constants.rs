@@ -9,7 +9,7 @@ pub const RNG_WORLD_SEED                : u64   = 42;
 /// WORLD
 /// ---------------------------------------------------------------------------------------------------------
 
-pub const MAX_POPULATION                : usize = 200_000;
+pub const MAX_POPULATION                : usize = 50_000;
 pub const WORLD_WIDTH                   : u32   = 100;
 pub const WORLD_HEIGHT                  : u32   = 100;
 
@@ -21,17 +21,17 @@ pub const OUTPUT_VALUE1_MASK            : u64   = 0b00000000_00000000_11111111_0
 pub const OUTPUT_VALUE2_MASK            : u64   = 0b00000000_11111111_00000000_00000000;
 pub const OUTPUT_VALUE3_MASK            : u64   = 0b11111111_00000000_00000000_00000000;
 
-pub const ENERGY_COST_SLEEP             : f32   = 5.1;
-pub const ENERGY_COST_REPRODUCE         : f32   = 50.0;
-pub const ENERGY_COST_MOVE              : f32   = 1.5;
-pub const ENERGY_COST_FIRED_NEURON      : f32   = 0.005;
-pub const ENERGY_COST_IDLE              : f32   = 10.0;
+pub const ENERGY_COST_SLEEP             : f32   =  -0.5;
+pub const ENERGY_COST_REPRODUCE         : f32   =  50.0;
+pub const ENERGY_COST_MOVE              : f32   =   1.5;
+pub const ENERGY_COST_FIRED_NEURON      : f32   =   0.05;
+pub const ENERGY_COST_IDLE              : f32   =   5.0;
 
-pub const REPRODUCE_AGE_MIN             : u32   = 20;
-pub const REPRODUCE_AGE_MAX             : u32   = 80;
+pub const REPRODUCE_AGE_MIN             : u32   =  20;
+pub const REPRODUCE_AGE_MAX             : u32   = 100;
 
-pub const CREATURE_MAX_SPEED            : f32   = 10.0;
-pub const CREATURE_MAX_AGE              : u32   = 300;
+pub const CREATURE_MAX_SPEED            : f32   =  10.0;
+pub const CREATURE_MAX_AGE              : u32   = 200;
 
 /// ---------------------------------------------------------------------------------------------------------
 /// BRAIN

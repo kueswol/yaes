@@ -27,6 +27,9 @@ impl CreatureAction {
 /// events that can happen to a creature after thinking
 pub enum CreatureEvent {
     None,
+    Sleep,
+    Move { direction: f32, speed: f32 },
+    Eat,
     Reproduce,
     Die,
 }
