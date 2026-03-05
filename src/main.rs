@@ -22,7 +22,7 @@ fn main() {
     println!("Starting simulation...");
     for _ in 0..50_000 {
         world.tick();
-        world.print_to_terminal(true,false);
+        world.print_to_terminal(true,false, true);
         thread::sleep(Duration::from_millis(5));
         if world.creatures.len() < 1 {
             // println!("The world is empty. Spawning new creature...");

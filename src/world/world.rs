@@ -3,7 +3,7 @@ use crate::utils::CreatureEvent;
 use crate::creature::Creature;
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
-
+use std::time::Instant;
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 /// The World
@@ -16,6 +16,8 @@ pub struct World {
     pub counter_deaths           :  u64,
     pub dimension                :  (u32,u32),
     pub pending_creature_events  :  Vec<(Option<usize>, CreatureEvent)>,
+    pub tick_duration_think      :  std::time::Duration,
+    pub tick_duration_act        :  std::time::Duration,
 }
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -32,21 +34,35 @@ impl World {
             counter_deaths           :  0,
             dimension                :  (c::WORLD_WIDTH, c::WORLD_HEIGHT),
             pending_creature_events  :  Vec::new(),
+            tick_duration_think      :  std::time::Duration::default(),
+            tick_duration_act        :  std::time::Duration::default(),
         }
     }
     
     /******************************************************************************************************************************************/
     pub fn tick(&mut self) {
+        
         self.cycle += 1;
+        
+        let start_think = Instant::now();
         self.let_creatures_think();
+        self.tick_duration_think = start_think.elapsed();
+
+        let start_act = Instant::now();
         self.let_creatures_act();
-        // self.remove_dead_creatures();
+        self.tick_duration_act = start_act.elapsed();
     }
     
     /******************************************************************************************************************************************/
-    pub fn print_to_terminal(&mut self,world_stats: bool,creature_details: bool) {
-        if world_stats {
+    pub fn print_to_terminal(&mut self,world_stats: bool,creature_details: bool, tick_durations: bool) {
+        if world_stats && tick_durations {
+            println!("Cycle: {:9}, Pop: {:9} ({:9} *, {:9} †), Think: {:6.2}ms, Act: {:6.2}ms", self.cycle, self.creatures.len(), self.counter_newborns, self.counter_deaths, self.tick_duration_think.as_secs_f32() * 1000.0, self.tick_duration_act.as_secs_f32() * 1000.0);
+        }
+        if world_stats && !tick_durations {
             println!("Cycle: {:9}, Pop: {:9} ({:9} *, {:9} †)", self.cycle, self.creatures.len(), self.counter_newborns, self.counter_deaths);
+        }
+        if !world_stats && tick_durations {
+            println!("Think duration: {:?}, Act duration: {:?}", self.tick_duration_think, self.tick_duration_act);
         }
         if creature_details {
             for creature in &self.creatures {
