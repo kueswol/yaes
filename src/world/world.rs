@@ -44,13 +44,13 @@ impl World {
         
         self.cycle += 1;
         
-        let start_think = Instant::now();
+        // let start_think = Instant::now();
         self.let_creatures_think();
-        self.tick_duration_think = start_think.elapsed();
+        // self.tick_duration_think = start_think.elapsed();
 
-        let start_act = Instant::now();
-        self.let_creatures_act();
-        self.tick_duration_act = start_act.elapsed();
+        // let start_act = Instant::now();
+        // self.let_creatures_act();
+        // self.tick_duration_act = start_act.elapsed();
     }
     
     /******************************************************************************************************************************************/
@@ -72,7 +72,7 @@ impl World {
     }
 
     /******************************************************************************************************************************************/
-    pub fn spawn_random_creature(&mut self, mut count: usize) {
+    pub fn spawn_random_creatures(&mut self, mut count: usize) {
         if count + self.creatures.len() > c::MAX_POPULATION {
             count = c::MAX_POPULATION - self.creatures.len();
         }
@@ -83,6 +83,11 @@ impl World {
             let creature = Creature::new(&mut self.rng);
             self.creatures.push(creature);
         }
+    }
+
+    /******************************************************************************************************************************************/
+    pub fn get_creature_count(&self) -> usize {
+        self.creatures.len()
     }
 }
 
@@ -133,7 +138,7 @@ impl World {
                         }
                     }
                 }
-
+                
                 CreatureEvent::Reproduce => {
                     if let Some(id) = id {
                         if self.creatures[id].energy < c::ENERGY_COST_REPRODUCE ||
