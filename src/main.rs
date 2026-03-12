@@ -1,8 +1,6 @@
 pub mod constants;
-pub mod creature;
 pub mod ecs;
 pub mod utils;
-pub mod world;
 
 // use crate::constants as c;
 use crate::ecs::World;

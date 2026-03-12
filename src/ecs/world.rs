@@ -323,7 +323,7 @@ impl World {
     /******************************************************************************************************************************************/
     /// schedule the creatures' actions based on their brain outputs
     fn handle_action_eat(&mut self) {
-        let mut pending_eat =
+        let pending_eat =
             std::mem::replace(&mut self.pending_eat, Vec::with_capacity(c::MAX_POPULATION));
         for (entity_id, _action) in pending_eat {
             let pos = &self.positions[entity_id];
