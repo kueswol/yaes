@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 
 /****************************************************************************************************************/
 #[derive(Clone, Copy)]
@@ -32,4 +34,21 @@ pub enum CreatureEvent {
     Eat,
     Reproduce,
     Die,
+}
+
+/****************************************************************************************************************/
+/// a struct to transport the world's statistics
+#[derive(Serialize)]
+pub struct WorldStats {
+    pub tick: u64,
+    pub population: u64,
+    pub avg_energy: f32,
+    pub avg_age: f32,
+    pub births: u64,
+    pub deaths: u64,
+    pub eat_success: u64,
+    pub eat_failed: u64,
+    pub reproduce_success: u64,
+    pub reproduce_failed_age: u64,
+    pub reproduce_failed_energy: u64,
 }

@@ -2,6 +2,7 @@ use crate::{
     constants as c,
     ecs::components::{genome::Genome, *},
     utils::*,
+    web::views::*,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use rayon::prelude::*;
@@ -13,13 +14,22 @@ use rayon::prelude::*;
 pub struct World {
     // the world wide root of all "randomness"
     rng: rand::rngs::StdRng,
-    
+    foodmap: Vec<u8>,
+
     // statistics
     pub tick_counter: u64,
     pub seed: u64,
     pub deaths: u64,
     pub births: u64,
     pub successfully_reproducing_dna: Vec<String>,
+    pub eat_success: u64,
+    pub eat_failed: u64,
+    pub reproduce_success: u64,
+    pub reproduce_failed_age: u64,
+    pub reproduce_failed_energy: u64,
+    pub avg_energy: f32,
+    pub avg_age: f32,
+    
     // entity management
     next_creature_id: usize,
     /// bitmap:
@@ -53,13 +63,34 @@ pub struct World {
 impl World {
     /******************************************************************************************************************************************/
     pub fn new(rng_seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(rng_seed);
+
+        // let mut foodmap: Vec<u8> = Vec::with_capacity(((c::WORLD_WIDTH + 1) * c::WORLD_HEIGHT) as usize);
+        // for i in 0..foodmap.len() {
+        //     foodmap[i] = rng.gen_bool(0.20) as u8;
+        // }
+        let mut foodmap: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
+        for i in 0..foodmap.len() {
+            foodmap[i] = rng.gen_bool(0.20) as u8;
+        }
+        // make sure there's always food at the spawn location
+        foodmap[50_usize * (c::WORLD_WIDTH as usize) + 50_usize] = 1_u8;
+        
         Self {
-            rng: StdRng::seed_from_u64(rng_seed),
+            rng,
+            foodmap,
             tick_counter: 0,
             seed: rng_seed,
             deaths: 0,
             births: 0,
             successfully_reproducing_dna: Vec::new(),
+            eat_success: 0,
+            eat_failed: 0,
+            reproduce_success: 0,
+            reproduce_failed_age: 0,
+            reproduce_failed_energy: 0,
+            avg_energy: 0.0,
+            avg_age: 0.0,
             next_creature_id: 0,
             creatures: Vec::with_capacity(c::MAX_POPULATION),
             positions: Vec::with_capacity(c::MAX_POPULATION),
@@ -89,8 +120,10 @@ impl World {
         self.handle_action_sleep();
         self.handle_action_reproduce();
         self.handle_energy_costs();
+        self.handle_age_events();
         self.handle_deaths();
 
+        self.update_stats();
         self.tick_counter += 1;
     }
 
@@ -106,12 +139,12 @@ impl World {
         // prepare some values:
         let new_creature_position: Coordinate =
             position.unwrap_or_else(|| Coordinate { x: 50.0, y: 50.0 });
-        let new_creature_energy: f32 = 50.0;
+        let new_creature_energy: f32 = 70.0;
         let new_creature_birthtick: u32 = self.tick_counter as u32;
         let new_creature_brain_input: u64 = 0;
         let new_creature_brain_output: u64 = 0;
 
-        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(256, &mut self.rng));
+        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(384, &mut self.rng));
         let new_creature_genome: Genome = Genome::from_dna(&new_creature_dna);
         let new_creature_brain: Brain = Brain::recompile(&new_creature_genome);
 
@@ -161,10 +194,58 @@ impl World {
     pub fn get_creature_count(&self) -> usize {
         self.creatures.len()
     }
+
+    /******************************************************************************************************************************************/
+    /// get statics about the world
+    pub fn get_stats(&self) -> WorldStats {
+        WorldStats {
+            tick: self.tick_counter,
+            population: self.creatures.len() as u64,
+            avg_energy: self.avg_energy,
+            avg_age: self.avg_age,
+            births: self.births,
+            deaths: self.deaths,
+            eat_success: self.eat_success,
+            eat_failed: self.eat_failed,
+            reproduce_success: self.reproduce_success,
+            reproduce_failed_age: self.reproduce_failed_age,
+            reproduce_failed_energy: self.reproduce_failed_energy,
+        }
+    }
+    
+    /******************************************************************************************************************************************/
+    /// export a view of the world for the webserver
+    pub fn to_view(&self) -> WorldView {
+        WorldView {
+            tick: self.tick_counter,
+            population: self.creatures.len(),
+        }
+    }
+    
+    /******************************************************************************************************************************************/
+    /// export a view of the creatures for the webserver
+    pub fn creatures_view(&self) -> Vec<CreatureView> {
+
+        let mut result = Vec::with_capacity(self.creatures.len());
+        for i in 0..self.creatures.len() {
+            if self.creatures[i] & c::CREATURE_BITFLAG_IS_ALIVE == 0 {
+                continue;
+            }
+
+            let pos = self.positions[i];
+
+            result.push(CreatureView {
+                x: pos.x as u32,
+                y: pos.y as u32,
+            });
+        }
+
+        result
+    }
 }
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-/// The World's private functions
+/// The ECS' systems
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 impl World {
     /******************************************************************************************************************************************/
@@ -175,7 +256,7 @@ impl World {
     ///   [10] LastAction Idle,         [11] LastAction Sleep,        [12] LastAction Move,
     ///   [13] LastAction Eat,          [14] LastAction Reproduce,    [15] can_reproduce,
     ///   [16] age low,                 [17] age mid,                 [18] age high,
-    ///   [19] unused,                  [20] unused,                  [21] unused,
+    ///   [19] can_eat,                 [20] unused,                  [21] unused,
     ///   [22] unused,                  [23] unused,                  [24] unused
     fn update_brain_inputs(&mut self) {
         // for each creature, gather sensory data and update brain_inputs
@@ -184,26 +265,34 @@ impl World {
         let creatures = &self.creatures;
         let brain_outputs = &self.brain_outputs;
         let ages = &self.ages;
-        let tick_counter = self.tick_counter;
+        let tick_counter = &self.tick_counter;
+        let foodmap = &self.foodmap;
 
         self.brain_inputs
             .par_iter_mut()
             .with_min_len(100)
             .enumerate()
             .for_each(move |(entity_id, input)| {
+                // energie low|mid|high
                 *input |= Self::encode_3bucket(
                     energies[entity_id],
                     [c::BRAIN_INPUTS_ENERGY_LOW, c::BRAIN_INPUTS_ENERGY_MID],
                 ) << 0;
+
+                // pos.x left|center|right
+                let pos = &positions[entity_id];
                 *input |= Self::encode_3bucket(
-                    positions[entity_id].x,
+                    pos.x,
                     [c::BRAIN_INPUTS_POSX_LEFT, c::BRAIN_INPUTS_POSX_CENTER],
                 ) << 3;
+
+                // pos.y top|center|bottom
                 *input |= Self::encode_3bucket(
-                    positions[entity_id].y,
+                    pos.y,
                     [c::BRAIN_INPUTS_POSY_TOP, c::BRAIN_INPUTS_POSY_CENTER],
                 ) << 6;
 
+                // last action
                 let last_action = Self::decode_output(brain_outputs[entity_id]).0;
                 *input |= ((last_action == CreatureAction::Idle) as u64) << 9;
                 *input |= ((last_action == CreatureAction::Sleep) as u64) << 10;
@@ -211,18 +300,22 @@ impl World {
                 *input |= ((last_action == CreatureAction::Eat) as u64) << 12;
                 *input |= ((last_action == CreatureAction::Reproduce) as u64) << 13;
 
-                *input |= (((creatures[entity_id] & c::CREATURE_CAN_REPRODUCE) != 0) as u64) << 14;
+                // can reproduce
+                *input |= (((creatures[entity_id] & c::CREATURE_BITFLAG_CAN_REPRODUCE) != 0) as u64) << 14;
 
+                // age low|mid|high
                 *input |= Self::encode_3bucket(
-                    ((tick_counter as u32) - ages[entity_id]) as f32,
+                    ((*tick_counter as u32) - ages[entity_id]) as f32,
                     [
                         c::BRAIN_INPUTS_AGE_LOW as f32,
                         c::BRAIN_INPUTS_AGE_MID as f32,
                     ],
                 ) << 15;
+
+                // can eat (is there food at the current position?)
+                *input |= ((foodmap[(pos.y as usize).clamp(0,99) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,99)] > 0) as u64) << 18;
             });
 
-        // *inputs |= something else << 18;
         // *inputs |= something else << 19;
         // *inputs |= something else << 20;
         // *inputs |= something else << 21;
@@ -327,9 +420,13 @@ impl World {
             std::mem::replace(&mut self.pending_eat, Vec::with_capacity(c::MAX_POPULATION));
         for (entity_id, _action) in pending_eat {
             let pos = &self.positions[entity_id];
-            if pos.x >= 75.0 && pos.x < 25.0 && pos.y >= 75.0 && pos.y < 25.0 {
+            // if pos.x >= 70.0 && pos.x < 30.0 && pos.y >= 70.0 && pos.y < 30.0 {
+            if self.has_food(pos) {
                 self.pending_energy_costs.push((entity_id, -20.0)); // negative cost = energy gain
+                self.eat_success += 1;
+                return;
             }
+            self.eat_failed += 1;
         }
     }
 
@@ -385,12 +482,15 @@ impl World {
         for (entity_id, _action) in reproductions {
             let age = (self.tick_counter as u32) - self.ages[entity_id];
             if age < c::REPRODUCE_AGE_MIN || age > c::REPRODUCE_AGE_MAX {
+                self.reproduce_failed_age += 1;
                 continue;
             }
             if self.energies[entity_id] < c::ENERGY_COST_REPRODUCE {
+                self.reproduce_failed_energy += 1;
                 continue;
             }
             let mut new_dna = self.dnas[entity_id].clone();
+            self.reproduce_success += 1;
             self.successfully_reproducing_dna.push(new_dna.to_compact_string());
 
             new_dna.mutate(&mut self.rng);
@@ -437,6 +537,36 @@ impl World {
 
     /******************************************************************************************************************************************/
     /// handle the deaths of creatures
+    fn handle_age_events(&mut self) {
+        let creatures = &mut self.creatures;
+        let ages = &self.ages;
+        let tick_counter = self.tick_counter;
+        
+        creatures
+            .par_iter_mut()
+            .with_min_len(100)
+            .enumerate()
+            .filter_map(|(entity_id, creature)| {
+                let age = tick_counter - ages[entity_id] as u64;
+                if age > c::REPRODUCE_AGE_MIN as u64 && age < c::REPRODUCE_AGE_MAX as u64 {
+                    *creature |= c::CREATURE_BITFLAG_CAN_REPRODUCE;
+                } else {
+                    *creature &= !c::CREATURE_BITFLAG_CAN_REPRODUCE;
+                }
+                if age > c::CREATURE_MAX_AGE as u64 {
+                    return Some(entity_id);
+                }
+                None
+            })
+            .collect::<Vec<usize>>()
+            .into_iter()
+            .for_each(|entity_id| {
+                self.pending_deaths.push(entity_id);
+            });
+    }
+
+    /******************************************************************************************************************************************/
+    /// handle the deaths of creatures
     fn handle_deaths(&mut self) {
         let mut deaths = std::mem::replace(
             &mut self.pending_deaths,
@@ -449,6 +579,20 @@ impl World {
         }
     }
 
+    /******************************************************************************************************************************************/
+    /// update internal world statistics
+    fn update_stats(&mut self) {
+        let total_energy: f32 = self.energies.iter().sum();
+        self.avg_energy = total_energy / self.creatures.len() as f32;
+        let total_age: u32 = self.ages.iter().sum();
+        self.avg_age = self.tick_counter as f32 - (total_age as f32 / self.creatures.len() as f32);
+    }
+}
+
+/// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+/// Helper functions
+/// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+impl World {
     /******************************************************************************************************************************************/
     /// encodes a value into 3 buckets and returns a 3-bit representation as u64
     #[inline(always)]
@@ -508,6 +652,17 @@ impl World {
     fn get_age(&mut self, creature_id: usize) -> u32 {
         (self.tick_counter as u32) - self.ages[creature_id]
     }
+
+    /******************************************************************************************************************************************/
+    /// checks if there's food at the current position
+    #[inline(always)]
+    #[allow(dead_code)]
+    fn has_food(&self, pos: &Coordinate) -> bool {
+        let x = (pos.x as usize).clamp(0,99);
+        let y = (pos.y as usize).clamp(0,99);
+        self.foodmap[y * (c::WORLD_WIDTH as usize) + x] > 0
+    }
+
 }
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

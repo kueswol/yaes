@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>YAES</title>
+    <style>
+        html,body {
+            font-family: monospace;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #world {
+            display: block;
+        }
+        #overlay {
+            position:absolute;
+            top:10px;
+            left:10px;
+            color:white;
+            background:rgba(0,0,0,0.6);
+            padding:8px;
+            font-family:monospace;
+            font-size:14px;
+            border-radius:6px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="world"></canvas>
+    <div id="overlay">
+        Zoom: <span id="zoom_value"></span><br>
+        Camera: <span id="camera_value"></span>
+    </div>    
+    <script>
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // VARS
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // canvas
+        const canvas = document.getElementById("world");
+        const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
+        const gl = canvas.getContext("webgl");
+        // world
+        const worldWidth = 100;
+        const worldHeight = 100;
+        
+        let cameraX = 50;
+        let cameraY = 50;
+        let zoom = 1;
+        
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // FUNCTIONS
+        ///////////////////////////////////////////////////////////////////////////////////////
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error("Shader compile error:");
+                console.error(gl.getShaderInfoLog(shader));
+                console.error(source);
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+        function render(creatureCount) {
+            // gl.clearColor(0, 0, 0, 1);
+            gl.clearColor(0.16, 0.23, 0.29, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.useProgram(gridProgram);
+            gl.uniform2f(gl.getUniformLocation(gridProgram,"camera"),cameraX,cameraY);
+            gl.uniform1f(gl.getUniformLocation(gridProgram,"zoom"),zoom);
+            gl.uniform2f(gl.getUniformLocation(gridProgram,"worldSize"),worldWidth,worldHeight);
+            
+            // GRID
+            gl.uniform4f(gridColorLocation,0.25,0.25,0.25,1);
+            gl.bindBuffer(gl.ARRAY_BUFFER, gridBuffer);
+            gl.enableVertexAttribArray(gridPositionLocation);
+            gl.vertexAttribPointer(gridPositionLocation,2,gl.FLOAT,false,0,0);
+            gl.drawArrays(gl.LINES,0,gridVertexCount);
+            
+            // BORDER
+            gl.uniform4f(gridColorLocation,0.8,0.8,0.8,1);
+            gl.bindBuffer(gl.ARRAY_BUFFER, borderBuffer);
+            gl.enableVertexAttribArray(gridPositionLocation);
+            gl.vertexAttribPointer(gridPositionLocation,2,gl.FLOAT,false,0,0);
+            gl.drawArrays(gl.LINES,0,borderVertexCount);
+
+            // CREATURES
+            gl.useProgram(creatureProgram);
+            gl.uniform2f(cameraLocation, cameraX, cameraY);
+            gl.uniform1f(zoomLocation, zoom);
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation,2,gl.FLOAT,false,0,0);
+            gl.drawArrays(gl.POINTS,0,creatureCount);
+
+            // Overlay
+            updateOverlay();
+        }
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0,0,canvas.width,canvas.height);
+            zoom = Math.min(canvas.width, canvas.height) / worldWidth;
+        }
+        function updateOverlay() {
+            document.getElementById("zoom_value")
+                .textContent = zoom.toFixed(2);
+            document.getElementById("camera_value")
+                .textContent = cameraX.toFixed(1) + " / " + cameraY.toFixed(1);
+        }
+        function createGrid(worldWidth, worldHeight, cellSize) {
+            const lines = [];
+            for (let x = 0; x <= worldWidth; x += cellSize) {
+                lines.push(x,0);
+                lines.push(x,worldHeight);
+            }
+            for (let y = 0; y <= worldHeight; y += cellSize) {
+                lines.push(0,y);
+                lines.push(worldWidth,y);
+            }
+            return new Float32Array(lines);
+        }
+        function createWorldBorder(worldWidth, worldHeight) {
+            return new Float32Array([
+                0,0,
+                worldWidth,0,
+
+                worldWidth,0,
+                worldWidth,worldHeight,
+
+                worldWidth,worldHeight,
+                0,worldHeight,
+
+                0,worldHeight,
+                0,0
+            ]);
+        }
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // STUFF
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // canvas        
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        window.onresize = resizeCanvas;
+        resizeCanvas();
+        if (!gl) { alert("WebGL not supported"); }
+
+
+        // shader sources
+        const vertexShaderSource = `
+        attribute vec2 position;
+        uniform vec2 worldSize;
+        uniform vec2 camera;
+        uniform float zoom;
+        void main() {
+            vec2 world = (position - camera) * zoom;
+            vec2 clip = vec2(
+                world.x / worldSize.x * 2.0,
+                world.y / worldSize.y * 2.0
+            );
+            gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+            gl_PointSize = 6.0;
+        }
+        `;
+        const fragmentShaderSource = `
+        precision mediump float;
+
+        void main() {
+            gl_FragColor = vec4(0.2,0.9,0.3,1.0);
+        }
+        `;
+        const gridVertexShaderSource = `
+        attribute vec2 position;
+        uniform vec2 worldSize;
+        uniform vec2 camera;
+        uniform float zoom;
+        void main() {
+            vec2 world = (position - camera) * zoom;
+            vec2 clip = vec2(
+                world.x / worldSize.x * 2.0,
+                world.y / worldSize.y * 2.0
+            );
+            gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+        }
+        `;
+        const gridFragmentShaderSource = `
+        precision mediump float;
+        uniform vec4 color;
+        void main() {
+            gl_FragColor = color;
+        }
+        `;
+        // compile shaders
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const gridVertexShader = createShader(gl, gl.VERTEX_SHADER, gridVertexShaderSource);
+        const gridFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, gridFragmentShaderSource);
+
+        // WebGL programs
+        const creatureProgram = gl.createProgram();
+        gl.attachShader(creatureProgram, vertexShader);
+        gl.attachShader(creatureProgram, fragmentShader);
+        gl.linkProgram(creatureProgram);
+        gl.useProgram(creatureProgram);
+        
+        const gridProgram = gl.createProgram();
+        gl.attachShader(gridProgram, gridVertexShader);
+        gl.attachShader(gridProgram, gridFragmentShader);
+        gl.linkProgram(gridProgram);
+        const gridColorLocation = gl.getUniformLocation(gridProgram, "color");
+
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+        // buffer for batch rendering
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+        const gridData = createGrid(100,100,10);
+        const gridBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, gridBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, gridData, gl.STATIC_DRAW);
+        const gridVertexCount = gridData.length / 2;
+
+        const borderData = createWorldBorder(worldWidth, worldHeight);
+        const borderBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, borderBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, borderData, gl.STATIC_DRAW);
+        const borderVertexCount = borderData.length / 2;
+
+        // connect attributes
+        const positionLocation = gl.getAttribLocation(creatureProgram, "position");
+        const gridPositionLocation = gl.getAttribLocation(gridProgram, "position");
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation,2,gl.FLOAT,false,0,0);
+
+
+        // camera zooming/panning
+        cameraX = worldWidth / 2;
+        cameraY = worldHeight / 2;
+        zoom = Math.min(canvas.width, canvas.height) / worldWidth;
+        const cameraLocation = gl.getUniformLocation(creatureProgram, "camera");
+        const zoomLocation = gl.getUniformLocation(creatureProgram, "zoom");
+        const worldSizeLocation = gl.getUniformLocation(creatureProgram, "worldSize");
+        gl.uniform2f(cameraLocation, cameraX, cameraY);
+        gl.uniform1f(zoomLocation, zoom);
+        gl.uniform2f(worldSizeLocation, worldWidth, worldHeight);
+
+        // mouse panning
+        let dragging = false;
+        canvas.onmousedown = () => dragging = true;
+        canvas.onmouseup = () => dragging = false;
+        canvas.onmousemove = (e) => {
+            if (!dragging) return;
+            const worldPerPixelX = worldWidth / canvas.width;
+            const worldPerPixelY = worldHeight / canvas.height;
+            cameraX -= e.movementX * worldPerPixelX / zoom;
+            cameraY -= e.movementY * worldPerPixelY / zoom;
+        };
+
+        // mouse zooming
+        // canvas.onwheel = (e) => {
+        //     e.preventDefault();
+        //     const factor = 1.1;
+        //     if (e.deltaY < 0)
+        //         zoom *= factor;
+        //     else
+        //         zoom /= factor;
+        // };
+        canvas.onwheel = (e) => {
+            e.preventDefault();
+            const zoomFactor = 1.1;
+            const mouseWorldX = cameraX + (e.offsetX / canvas.width - 0.5) * worldWidth / zoom;
+            const mouseWorldY = cameraY - (e.offsetY / canvas.height - 0.5) * worldHeight / zoom;
+            if (e.deltaY < 0)
+                zoom *= zoomFactor;
+            else
+                zoom /= zoomFactor;
+            cameraX = mouseWorldX - (e.offsetX / canvas.width - 0.5) * worldWidth / zoom;
+            cameraY = mouseWorldY + (e.offsetY / canvas.height - 0.5) * worldHeight / zoom;
+        };
+
+        // websocket
+        const socket = new WebSocket("ws://" + location.host + "/ws");
+        socket.binaryType = "arraybuffer";
+        socket.onmessage = (event) => {
+            const positions = new Float32Array(event.data);
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(
+                gl.ARRAY_BUFFER,
+                positions,
+                gl.DYNAMIC_DRAW
+            );
+            render(positions.length / 2);
+        };
+
+        // async function updateWorld() {
+        //     const response = await fetch("/world");
+        //     const data = await response.json();
+        //     document.getElementById("stat_tick").textContent = data.tick;
+        //     document.getElementById("stat_population").textContent = data.population;
+        //     document.getElementById("stat_tick").textContent = data.tick;
+        //     document.getElementById("stat_population").textContent = data.population;
+        //     document.getElementById("stat_avg_energy").textContent = data.avg_energy.toFixed(2);
+        //     document.getElementById("stat_avg_age").textContent = data.avg_age.toFixed(2);
+        //     document.getElementById("stat_births").textContent = data.births;
+        //     document.getElementById("stat_deaths").textContent = data.deaths;
+        //     document.getElementById("stat_eat_success").textContent = data.eat_success;
+        //     document.getElementById("stat_eat_failed").textContent = data.eat_failed;
+        //     document.getElementById("stat_reproduce_success").textContent = data.reproduce_success;
+        //     document.getElementById("stat_reproduce_failed_age").textContent = data.reproduce_failed_age;
+        //     document.getElementById("stat_reproduce_failed_energy").textContent = data.reproduce_failed_energy;
+        // }
+        // interval_updateWorld   = setInterval(updateWorld, 1000);
+
+    </script>
+
+</body>
+
+</html>
