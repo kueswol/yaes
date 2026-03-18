@@ -30,7 +30,20 @@
     <canvas id="world"></canvas>
     <div id="overlay">
         Zoom: <span id="zoom_value"></span><br>
-        Camera: <span id="camera_value"></span>
+        Camera: <span id="camera_value"></span><br>
+        tick: <span id="stat_tick"></span><br>
+        population: <span id="stat_population"></span><br>
+        tick: <span id="stat_tick"></span><br>
+        population: <span id="stat_population"></span><br>
+        avg_energy: <span id="stat_avg_energy"></span><br>
+        avg_age: <span id="stat_avg_age"></span><br>
+        births: <span id="stat_births"></span><br>
+        deaths: <span id="stat_deaths"></span><br>
+        eat_success: <span id="stat_eat_success"></span><br>
+        eat_failed: <span id="stat_eat_failed"></span><br>
+        reproduce_success: <span id="stat_reproduce_success"></span><br>
+        reproduce_failed_age: <span id="stat_reproduce_failed_age"></span><br>
+        reproduce_failed_energy: <span id="stat_reproduce_failed_energy"></span>
     </div>    
     <script>
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -44,10 +57,14 @@
         const worldWidth = 100;
         const worldHeight = 100;
         
+        const MIN_ZOOM = 0.99;
+        const MAX_ZOOM = 200;
         let cameraX = 50;
         let cameraY = 50;
-        let zoom = 1;
+        let zoom = 0.99;
         
+        const emptyData = new Uint8Array(worldWidth * worldHeight * 4); // Alles 0 (leer)
+        // const emptyData = new Uint8Array(worldWidth * worldHeight * 4); // Alles 1 (voll)
         ///////////////////////////////////////////////////////////////////////////////////////
         // FUNCTIONS
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -64,53 +81,46 @@
             }
             return shader;
         }
-        function render(creatureCount) {
-            // gl.clearColor(0, 0, 0, 1);
-            gl.clearColor(0.16, 0.23, 0.29, 1.0);
+        function createProgram(gl, vertexSrc, fragmentSrc) {
+            const vs = createShader(gl, gl.VERTEX_SHADER, vertexSrc);
+            const fs = createShader(gl, gl.FRAGMENT_SHADER, fragmentSrc);
+
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+
+            return program;
+        }
+        function setCamera(gl, program) {
+            gl.uniform2f(gl.getUniformLocation(program, "camera"), cameraX, cameraY);
+            gl.uniform1f(gl.getUniformLocation(program, "zoom"), zoom);
+            gl.uniform2f(gl.getUniformLocation(program, "worldSize"), worldWidth, worldHeight);
+        }
+        function render() {
+            // gl.clearColor(0.5, 0.5, 0.5, 1.0);
+            gl.clearColor(0.16, 0.23, 0.23, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
-            gl.useProgram(gridProgram);
-            gl.uniform2f(gl.getUniformLocation(gridProgram,"camera"),cameraX,cameraY);
-            gl.uniform1f(gl.getUniformLocation(gridProgram,"zoom"),zoom);
-            gl.uniform2f(gl.getUniformLocation(gridProgram,"worldSize"),worldWidth,worldHeight);
-            
-            // GRID
-            gl.uniform4f(gridColorLocation,0.25,0.25,0.25,1);
-            gl.bindBuffer(gl.ARRAY_BUFFER, gridBuffer);
-            gl.enableVertexAttribArray(gridPositionLocation);
-            gl.vertexAttribPointer(gridPositionLocation,2,gl.FLOAT,false,0,0);
-            gl.drawArrays(gl.LINES,0,gridVertexCount);
-            
-            // BORDER
-            gl.uniform4f(gridColorLocation,0.8,0.8,0.8,1);
-            gl.bindBuffer(gl.ARRAY_BUFFER, borderBuffer);
-            gl.enableVertexAttribArray(gridPositionLocation);
-            gl.vertexAttribPointer(gridPositionLocation,2,gl.FLOAT,false,0,0);
-            gl.drawArrays(gl.LINES,0,borderVertexCount);
+            foodLayer.draw();
+            gridLayer.draw();
+            creatureLayer.draw();
 
-            // CREATURES
-            gl.useProgram(creatureProgram);
-            gl.uniform2f(cameraLocation, cameraX, cameraY);
-            gl.uniform1f(zoomLocation, zoom);
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.enableVertexAttribArray(positionLocation);
-            gl.vertexAttribPointer(positionLocation,2,gl.FLOAT,false,0,0);
-            gl.drawArrays(gl.POINTS,0,creatureCount);
-
-            // Overlay
             updateOverlay();
         }
         function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            gl.viewport(0,0,canvas.width,canvas.height);
-            zoom = Math.min(canvas.width, canvas.height) / worldWidth;
+            const size = Math.min(canvas.width, canvas.height);
+            const offsetX = (canvas.width - size) / 2;
+            const offsetY = (canvas.height - size) / 2;
+            gl.viewport(offsetX, offsetY, size, size);
+            // zoom = size / worldWidth;
+            clampCamera();
         }
         function updateOverlay() {
             document.getElementById("zoom_value")
-                .textContent = zoom.toFixed(2);
+                .textContent = zoom.toFixed(2).toLocaleString();
             document.getElementById("camera_value")
-                .textContent = cameraX.toFixed(1) + " / " + cameraY.toFixed(1);
+                .textContent = cameraX.toFixed(1).toLocaleString() + " | " + cameraY.toFixed(1).toLocaleString();
         }
         function createGrid(worldWidth, worldHeight, cellSize) {
             const lines = [];
@@ -139,6 +149,32 @@
                 0,0
             ]);
         }
+        function createWorldQuad(w, h) {
+            return new Float32Array([
+                0, 0,
+                w, 0,
+                0, h,
+
+                0, h,
+                w, 0,
+                w, h
+            ]);
+        }
+        function getViewSize() {
+            const viewWidth = worldWidth / zoom;
+            const viewHeight = worldHeight / zoom;
+            return { viewWidth, viewHeight };
+        }
+        function clampCamera() {
+            const { viewWidth, viewHeight } = getViewSize();
+
+            const halfW = viewWidth / 2;
+            const halfH = viewHeight / 2;
+
+            cameraX = Math.max(halfW, Math.min(worldWidth - halfW, cameraX));
+            cameraY = Math.max(halfH, Math.min(worldHeight - halfH, cameraY));
+        }
+
         ///////////////////////////////////////////////////////////////////////////////////////
         // STUFF
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -149,9 +185,16 @@
         resizeCanvas();
         if (!gl) { alert("WebGL not supported"); }
 
+        const foodTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, foodTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, worldWidth, worldHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, emptyData);
 
         // shader sources
-        const vertexShaderSource = `
+        const creatureVertexShaderSource = `
         attribute vec2 position;
         uniform vec2 worldSize;
         uniform vec2 camera;
@@ -166,13 +209,15 @@
             gl_PointSize = 6.0;
         }
         `;
-        const fragmentShaderSource = `
+        
+        const creatureFragmentShaderSource = `
         precision mediump float;
 
         void main() {
             gl_FragColor = vec4(0.2,0.9,0.3,1.0);
         }
         `;
+        
         const gridVertexShaderSource = `
         attribute vec2 position;
         uniform vec2 worldSize;
@@ -187,6 +232,7 @@
             gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
         }
         `;
+        
         const gridFragmentShaderSource = `
         precision mediump float;
         uniform vec4 color;
@@ -194,16 +240,51 @@
             gl_FragColor = color;
         }
         `;
+
+        const foodmapVertexShaderSource = `
+        attribute vec2 position;
+        uniform vec2 worldSize;
+        uniform vec2 camera;
+        uniform float zoom;
+        varying vec2 v_uv;
+        void main() {
+            vec2 world = (position - camera) * zoom;
+            vec2 clip = vec2(
+                world.x / worldSize.x * 2.0,
+                world.y / worldSize.y * 2.0
+            );
+            gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+            v_uv = position / worldSize;
+        }
+        `;
+
+        const foodmapFragmentShaderSource = `
+        precision mediump float;
+        uniform sampler2D foodmap;
+        varying vec2 v_uv;
+        void main() {
+            float value = texture2D(foodmap, v_uv).r;
+            vec3 color = mix(
+                vec3(0.3, 0.3, 0.3),   // leer
+                vec3(0.0, 0.4, 0.0),   // Nahrung
+                value
+            );
+            gl_FragColor = vec4(color, 1.0);
+        }
+        `;
+
         // compile shaders
-        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const creatureVertexShader = createShader(gl, gl.VERTEX_SHADER, creatureVertexShaderSource);
+        const creatureFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, creatureFragmentShaderSource);
         const gridVertexShader = createShader(gl, gl.VERTEX_SHADER, gridVertexShaderSource);
         const gridFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, gridFragmentShaderSource);
+        const foodmapVertexShader = createShader(gl, gl.VERTEX_SHADER, foodmapVertexShaderSource);
+        const foodmapFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, foodmapFragmentShaderSource);
 
         // WebGL programs
         const creatureProgram = gl.createProgram();
-        gl.attachShader(creatureProgram, vertexShader);
-        gl.attachShader(creatureProgram, fragmentShader);
+        gl.attachShader(creatureProgram, creatureVertexShader);
+        gl.attachShader(creatureProgram, creatureFragmentShader);
         gl.linkProgram(creatureProgram);
         gl.useProgram(creatureProgram);
         
@@ -212,6 +293,16 @@
         gl.attachShader(gridProgram, gridFragmentShader);
         gl.linkProgram(gridProgram);
         const gridColorLocation = gl.getUniformLocation(gridProgram, "color");
+        
+        const foodmapProgram = gl.createProgram();
+        gl.attachShader(foodmapProgram, foodmapVertexShader);
+        gl.attachShader(foodmapProgram, foodmapFragmentShader);
+        gl.linkProgram(foodmapProgram);
+        const foodPositionLocation = gl.getAttribLocation(foodmapProgram, "position");
+        const foodCameraLocation = gl.getUniformLocation(foodmapProgram, "camera");
+        const foodZoomLocation = gl.getUniformLocation(foodmapProgram, "zoom");
+        const foodWorldSizeLocation = gl.getUniformLocation(foodmapProgram, "worldSize");
+        const foodSamplerLocation = gl.getUniformLocation(foodmapProgram, "foodmap");
 
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -232,6 +323,11 @@
         gl.bufferData(gl.ARRAY_BUFFER, borderData, gl.STATIC_DRAW);
         const borderVertexCount = borderData.length / 2;
 
+        const foodData = createWorldQuad(worldWidth, worldHeight);
+        const foodBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, foodBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, foodData, gl.STATIC_DRAW);
+
         // connect attributes
         const positionLocation = gl.getAttribLocation(creatureProgram, "position");
         const gridPositionLocation = gl.getAttribLocation(gridProgram, "position");
@@ -242,7 +338,8 @@
         // camera zooming/panning
         cameraX = worldWidth / 2;
         cameraY = worldHeight / 2;
-        zoom = Math.min(canvas.width, canvas.height) / worldWidth;
+        // zoom = Math.min(canvas.width, canvas.height) / worldWidth;
+        zoom = 0.99;
         const cameraLocation = gl.getUniformLocation(creatureProgram, "camera");
         const zoomLocation = gl.getUniformLocation(creatureProgram, "zoom");
         const worldSizeLocation = gl.getUniformLocation(creatureProgram, "worldSize");
@@ -260,62 +357,146 @@
             const worldPerPixelY = worldHeight / canvas.height;
             cameraX -= e.movementX * worldPerPixelX / zoom;
             cameraY -= e.movementY * worldPerPixelY / zoom;
+            clampCamera();
         };
 
         // mouse zooming
-        // canvas.onwheel = (e) => {
-        //     e.preventDefault();
-        //     const factor = 1.1;
-        //     if (e.deltaY < 0)
-        //         zoom *= factor;
-        //     else
-        //         zoom /= factor;
-        // };
         canvas.onwheel = (e) => {
             e.preventDefault();
             const zoomFactor = 1.1;
             const mouseWorldX = cameraX + (e.offsetX / canvas.width - 0.5) * worldWidth / zoom;
             const mouseWorldY = cameraY - (e.offsetY / canvas.height - 0.5) * worldHeight / zoom;
+            // if (e.deltaY < 0) 
+            //     zoom *= Math.pow(zoomFactor, -e.deltaY * 0.01);
+            // else
+            //     zoom /= Math.pow(zoomFactor, -e.deltaY * 0.01);
             if (e.deltaY < 0)
                 zoom *= zoomFactor;
             else
                 zoom /= zoomFactor;
+
+            // clamp
+            zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
             cameraX = mouseWorldX - (e.offsetX / canvas.width - 0.5) * worldWidth / zoom;
             cameraY = mouseWorldY + (e.offsetY / canvas.height - 0.5) * worldHeight / zoom;
+            clampCamera();
         };
-
         // websocket
         const socket = new WebSocket("ws://" + location.host + "/ws");
         socket.binaryType = "arraybuffer";
         socket.onmessage = (event) => {
-            const positions = new Float32Array(event.data);
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.bufferData(
-                gl.ARRAY_BUFFER,
-                positions,
-                gl.DYNAMIC_DRAW
-            );
-            render(positions.length / 2);
+            const bytes = new Uint8Array(event.data);
+            const type = bytes[0];
+            const payload = bytes.slice(1);
+            
+            if (type === 1) {
+                // CREATURES
+                const positions = new Float32Array(payload.buffer,payload.byteOffset,payload.byteLength / 4);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
+                creatureLayer.count = positions.length / 2;
+            }
+            else if (type === 2) {
+                console.log("Received foodmap update with " + payload.length + " bytes");
+                // FOODMAP
+                gl.bindTexture(gl.TEXTURE_2D, foodTexture);
+                const rgbaData = new Uint8Array(payload.length * 4);
+                for (let i = 0; i < payload.length; i++) {
+                    const val = payload[i]; // 0 oder 1 (oder 0-255)
+                    rgbaData[i * 4] = val;     // R
+                    rgbaData[i * 4 + 1] = 0;   // G
+                    rgbaData[i * 4 + 2] = 0;   // B
+                    rgbaData[i * 4 + 3] = 255; // A (immer opak, oder val für Transparenz)
+                }
+                console.log("RGBA data sample:", rgbaData.slice(0, 16));
+                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,worldWidth,worldHeight,0,gl.RGBA,gl.UNSIGNED_BYTE,rgbaData);
+            }
+            render();
+        };
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // WebGL Layers
+        ///////////////////////////////////////////////////////////////////////////////////////
+        const foodLayer = {
+            program: createProgram(gl, foodmapVertexShaderSource, foodmapFragmentShaderSource),
+            buffer: foodBuffer,
+            texture: foodTexture,
+            
+            draw() {
+                gl.useProgram(this.program);
+                setCamera(gl, this.program);
+
+                const posLoc = gl.getAttribLocation(this.program, "position");
+                const samplerLoc = gl.getUniformLocation(this.program, "foodmap");
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+                gl.enableVertexAttribArray(posLoc);
+                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.texture);
+                gl.uniform1i(samplerLoc, 0);
+                
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+        };
+        const gridLayer = {
+            program: createProgram(gl, gridVertexShaderSource, gridFragmentShaderSource),
+            buffer: gridBuffer,
+            count: gridVertexCount,
+
+            draw() {
+                gl.useProgram(this.program);
+                setCamera(gl, this.program);
+
+                const posLoc = gl.getAttribLocation(this.program, "position");
+                const colorLoc = gl.getUniformLocation(this.program, "color");
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+                gl.enableVertexAttribArray(posLoc);
+                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+                gl.uniform4f(colorLoc, 0.25, 0.25, 0.25, 1);
+                gl.drawArrays(gl.LINES, 0, this.count);
+            }
+        };
+        const creatureLayer = {
+            program: createProgram(gl, creatureVertexShaderSource, creatureFragmentShaderSource),
+            buffer: positionBuffer,
+            count: 0,
+
+            draw() {
+                gl.useProgram(this.program);
+                setCamera(gl, this.program);
+
+                const posLoc = gl.getAttribLocation(this.program, "position");
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+                gl.enableVertexAttribArray(posLoc);
+                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+                gl.drawArrays(gl.POINTS, 0, this.count);
+            }
         };
 
-        // async function updateWorld() {
-        //     const response = await fetch("/world");
-        //     const data = await response.json();
-        //     document.getElementById("stat_tick").textContent = data.tick;
-        //     document.getElementById("stat_population").textContent = data.population;
-        //     document.getElementById("stat_tick").textContent = data.tick;
-        //     document.getElementById("stat_population").textContent = data.population;
-        //     document.getElementById("stat_avg_energy").textContent = data.avg_energy.toFixed(2);
-        //     document.getElementById("stat_avg_age").textContent = data.avg_age.toFixed(2);
-        //     document.getElementById("stat_births").textContent = data.births;
-        //     document.getElementById("stat_deaths").textContent = data.deaths;
-        //     document.getElementById("stat_eat_success").textContent = data.eat_success;
-        //     document.getElementById("stat_eat_failed").textContent = data.eat_failed;
-        //     document.getElementById("stat_reproduce_success").textContent = data.reproduce_success;
-        //     document.getElementById("stat_reproduce_failed_age").textContent = data.reproduce_failed_age;
-        //     document.getElementById("stat_reproduce_failed_energy").textContent = data.reproduce_failed_energy;
-        // }
-        // interval_updateWorld   = setInterval(updateWorld, 1000);
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // Stats per classic webservice
+        ///////////////////////////////////////////////////////////////////////////////////////
+        async function updateWorldStats() {
+            const response = await fetch("/world");
+            const data = await response.json();
+            document.getElementById("stat_tick").textContent = data.tick.toLocaleString();
+            document.getElementById("stat_population").textContent = data.population.toLocaleString();
+            document.getElementById("stat_avg_energy").textContent = data.avg_energy.toFixed(2).toLocaleString();
+            document.getElementById("stat_avg_age").textContent = data.avg_age.toFixed(2).toLocaleString();
+            document.getElementById("stat_births").textContent = data.births.toLocaleString();
+            document.getElementById("stat_deaths").textContent = data.deaths.toLocaleString();
+            document.getElementById("stat_eat_success").textContent = data.eat_success.toLocaleString();
+            document.getElementById("stat_eat_failed").textContent = data.eat_failed.toLocaleString();
+            document.getElementById("stat_reproduce_success").textContent = data.reproduce_success.toLocaleString();
+            document.getElementById("stat_reproduce_failed_age").textContent = data.reproduce_failed_age.toLocaleString();
+            document.getElementById("stat_reproduce_failed_energy").textContent = data.reproduce_failed_energy.toLocaleString();
+        }
+        interval_updateWorld   = setInterval(updateWorldStats, 2000);
 
     </script>
 

@@ -14,7 +14,7 @@ use rayon::prelude::*;
 pub struct World {
     // the world wide root of all "randomness"
     rng: rand::rngs::StdRng,
-    foodmap: Vec<u8>,
+    pub foodmap: Vec<u8>,
 
     // statistics
     pub tick_counter: u64,
@@ -71,10 +71,10 @@ impl World {
         // }
         let mut foodmap: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
         for i in 0..foodmap.len() {
-            foodmap[i] = rng.gen_bool(0.20) as u8;
+            foodmap[i] = if rng.gen_bool(0.20) { 255_u8 } else { 0_u8 };
         }
         // make sure there's always food at the spawn location
-        foodmap[50_usize * (c::WORLD_WIDTH as usize) + 50_usize] = 1_u8;
+        foodmap[50_usize * (c::WORLD_WIDTH as usize) + 50_usize] = 255_u8;
         
         Self {
             rng,
@@ -138,7 +138,7 @@ impl World {
 
         // prepare some values:
         let new_creature_position: Coordinate =
-            position.unwrap_or_else(|| Coordinate { x: 50.0, y: 50.0 });
+            position.unwrap_or_else(|| Coordinate { x: self.rng.gen_range(30.0..70.0), y: self.rng.gen_range(30.0..70.0) });
         let new_creature_energy: f32 = 70.0;
         let new_creature_birthtick: u32 = self.tick_counter as u32;
         let new_creature_brain_input: u64 = 0;

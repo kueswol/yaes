@@ -9,7 +9,7 @@ pub const RNG_WORLD_SEED                : u64   = 42;
 /// WORLD
 /// ---------------------------------------------------------------------------------------------------------
 
-pub const MAX_POPULATION                : usize = 10_000;
+pub const MAX_POPULATION                : usize = 25_000;
 pub const WORLD_WIDTH                   : u32   = 100;
 pub const WORLD_HEIGHT                  : u32   = 100;
 
@@ -23,9 +23,9 @@ pub const OUTPUT_VALUE3_MASK            : u64   = 0b00000000_00000000_00000000_0
 pub const OUTPUT_FIRED_NEURONS_MASK     : u64   = 0b00000000_00000000_11111111_11111111_00000000_00000000_00000000_00000000;
 
 pub const ENERGY_COST_SLEEP             : f32   =  -1.0;
-pub const ENERGY_COST_REPRODUCE         : f32   =  30.0;
-pub const ENERGY_COST_MOVE              : f32   =   1.0;
-pub const ENERGY_COST_FIRED_NEURON      : f32   =   0.01;
+pub const ENERGY_COST_REPRODUCE         : f32   =  33.0;
+pub const ENERGY_COST_MOVE              : f32   =   0.5;
+pub const ENERGY_COST_FIRED_NEURON      : f32   =   0.005;
 pub const ENERGY_COST_IDLE              : f32   =  10.0;
 
 pub const REPRODUCE_AGE_MIN             : u32   =   20;
