@@ -4,7 +4,7 @@ use crate::{
     utils::*,
     web::views::*,
 };
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, rngs::StdRng, seq::index};
 use rayon::prelude::*;
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -39,6 +39,7 @@ pub struct World {
 
     // light components
     positions: Vec<Coordinate>,
+    orientations: Vec<f32>,
     energies: Vec<f32>,
     ages: Vec<u32>,
     brain_inputs: Vec<u64>,
@@ -94,6 +95,7 @@ impl World {
             next_creature_id: 0,
             creatures: Vec::with_capacity(c::MAX_POPULATION),
             positions: Vec::with_capacity(c::MAX_POPULATION),
+            orientations: Vec::with_capacity(c::MAX_POPULATION),
             energies: Vec::with_capacity(c::MAX_POPULATION),
             ages: Vec::with_capacity(c::MAX_POPULATION),
             brain_inputs: Vec::with_capacity(c::MAX_POPULATION),
@@ -114,6 +116,7 @@ impl World {
     pub fn tick(&mut self) {
         self.update_brain_inputs();
         self.update_brain_outputs();
+        self.handle_turning();
         self.schedule_actions();
         self.handle_action_eat();
         self.handle_action_move();
@@ -122,6 +125,10 @@ impl World {
         self.handle_energy_costs();
         self.handle_age_events();
         self.handle_deaths();
+
+        if self.tick_counter & c::FOOD_REGROWTH_TICKS == 0 {
+            self.grow_food();
+        }
 
         self.update_stats();
         self.tick_counter += 1;
@@ -139,6 +146,7 @@ impl World {
         // prepare some values:
         let new_creature_position: Coordinate =
             position.unwrap_or_else(|| Coordinate { x: self.rng.gen_range(30.0..70.0), y: self.rng.gen_range(30.0..70.0) });
+        let new_orientation: f32 = self.rng.gen_range(0.0..std::f32::consts::TAU);
         let new_creature_energy: f32 = 70.0;
         let new_creature_birthtick: u32 = self.tick_counter as u32;
         let new_creature_brain_input: u64 = 0;
@@ -151,6 +159,7 @@ impl World {
         // we trust, that all vectors are aligned, so new creatures and its components will just be pushed at the end of the vectors
         self.creatures.push(0b0000_0001);
         self.positions.push(new_creature_position);
+        self.orientations.push(new_orientation);
         self.energies.push(new_creature_energy);
         self.ages.push(new_creature_birthtick);
         self.brain_inputs.push(new_creature_brain_input);
@@ -166,6 +175,7 @@ impl World {
     pub fn delete_creature(&mut self, id: usize) {
         self.creatures.swap_remove(id);
         self.positions.swap_remove(id);
+        self.orientations.swap_remove(id);
         self.energies.swap_remove(id);
         self.ages.swap_remove(id);
         self.brain_inputs.swap_remove(id);
@@ -235,8 +245,8 @@ impl World {
             let pos = self.positions[i];
 
             result.push(CreatureView {
-                x: pos.x as u32,
-                y: pos.y as u32,
+                x: pos.x as f32,
+                y: pos.y as f32,
             });
         }
 
@@ -293,7 +303,7 @@ impl World {
                 ) << 6;
 
                 // last action
-                let last_action = Self::decode_output(brain_outputs[entity_id]).0;
+                let last_action = Self::decode_output(&brain_outputs[entity_id]).0;
                 *input |= ((last_action == CreatureAction::Idle) as u64) << 9;
                 *input |= ((last_action == CreatureAction::Sleep) as u64) << 10;
                 *input |= ((last_action == CreatureAction::Move) as u64) << 11;
@@ -358,20 +368,16 @@ impl World {
             .with_min_len(100)
             .enumerate()
             .fold(
-                || (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()), // Lokaler Buffer pro Thread
+                || (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()), // local buffer per thread
                 |(mut moves, mut eats, mut sleeps, mut reproduces, mut energy_costs),
                  (entity_id, &brain_output)| {
-                    let (action, value1, value2, value3, fired_neurons_count) =
-                        Self::decode_output(brain_output);
-                    let mut energy_cost =
-                        (fired_neurons_count as f32) * c::ENERGY_COST_FIRED_NEURON;
+                    let (action, _value1, _value2, _value3, fired_neurons_count) =
+                        Self::decode_output(&brain_output);
+                    let mut energy_cost = (fired_neurons_count as f32) * c::ENERGY_COST_FIRED_NEURON;
                     match action {
                         CreatureAction::Move => {
-                            let direction = (value1 as u16 | (value2 as u16) << 8) as f32
-                                / (u16::MAX as f32)
-                                * 360.0;
-                            let speed = value3 as f32 / (u8::MAX as f32) * c::CREATURE_MAX_SPEED;
-                            moves.push((entity_id, CreatureEvent::Move { direction, speed }));
+                            let sprint: bool = (_value1 & c::BRAIN_OUTPUT_VALUE1_SPRINT) != 0;
+                            moves.push((entity_id, CreatureEvent::Move { sprint }));
                         }
                         CreatureAction::Eat => {
                             eats.push((entity_id, CreatureEvent::Eat));
@@ -414,14 +420,44 @@ impl World {
     }
 
     /******************************************************************************************************************************************/
+    /// turning is always possible
+    fn handle_turning(&mut self) {
+        let orientations = &mut self.orientations;
+        let brain_outputs = &self.brain_outputs;
+
+        orientations
+            .par_iter_mut()
+            .with_min_len(100)
+            .enumerate()
+            .for_each(move |(entity_id, orientation)| {
+                let brain_output = brain_outputs[entity_id];
+                let value1 = Self::decode_output(&brain_output).1;
+                let turn_left : bool = (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_LEFT ) != 0;
+                let turn_right: bool = (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_RIGHT) != 0;                
+                let mut delta: f32 = 0.0;
+                if turn_left  { delta += -5.0 };
+                if turn_right { delta +=  5.0 };
+                *orientation += delta;
+                // clamping to rad
+                if *orientation < std::f32::consts::TAU {
+                    *orientation += std::f32::consts::TAU;
+                }
+                else if *orientation >= std::f32::consts::TAU {
+                    *orientation -= std::f32::consts::TAU;
+                }
+            });
+    }
+
+    /******************************************************************************************************************************************/
     /// schedule the creatures' actions based on their brain outputs
     fn handle_action_eat(&mut self) {
         let pending_eat =
             std::mem::replace(&mut self.pending_eat, Vec::with_capacity(c::MAX_POPULATION));
         for (entity_id, _action) in pending_eat {
             let pos = &self.positions[entity_id];
-            // if pos.x >= 70.0 && pos.x < 30.0 && pos.y >= 70.0 && pos.y < 30.0 {
-            if self.has_food(pos) {
+            let (has_food, index) = self.has_food(pos);
+            if has_food {
+                self.foodmap[index] = self.foodmap[index].saturating_sub(15_u8); // we subtract 15 because u8=255 has prime factors 3, 5 and 17
                 self.pending_energy_costs.push((entity_id, -20.0)); // negative cost = energy gain
                 self.eat_success += 1;
                 return;
@@ -435,10 +471,10 @@ impl World {
     fn handle_action_move(&mut self) {
         for (entity_id, action) in &self.pending_move {
             match action {
-                CreatureEvent::Move { direction, speed } => {
-                    let radians = direction.to_radians();
-                    let dx = radians.cos() * speed;
-                    let dy = radians.sin() * speed;
+                CreatureEvent::Move { sprint } => {
+                    let speed = if *sprint { c::CREATURE_SPEED_SPRINT } else { c::CREATURE_SPEED };
+                    let dx = self.orientations[*entity_id].cos() * speed;
+                    let dy = self.orientations[*entity_id].sin() * speed;
 
                     self.positions[*entity_id].x =
                         (self.positions[*entity_id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
@@ -525,14 +561,6 @@ impl World {
                 self.pending_deaths.push(id);
             }
         }
-
-        // for (entity_id, energy_cost) in &self.pending_energy_costs {
-        //     self.energies[*entity_id] = (self.energies[*entity_id] - energy_cost).clamp(-1.0, 100.0);
-        //     if self.energies[*entity_id] <= 0.0 {
-        //         self.pending_deaths.push(*entity_id);
-        //     }
-        // }
-        // self.pending_energy_costs.clear();
     }
 
     /******************************************************************************************************************************************/
@@ -580,6 +608,29 @@ impl World {
     }
 
     /******************************************************************************************************************************************/
+    /// let the food spread and regrow
+    fn grow_food(&mut self) {
+        let foodmap = &mut self.foodmap;
+        let x = self.rng.gen_range(1..(c::WORLD_WIDTH - 1));
+        let y = self.rng.gen_range(1..(c::WORLD_HEIGHT - 1));
+        let index: usize = (y * c::WORLD_WIDTH + x) as usize;
+        let left : usize = index - 1;
+        let right: usize = index + 1;
+        let up   : usize = index - (c::WORLD_WIDTH as usize);
+        let down : usize = index + (c::WORLD_WIDTH as usize);
+
+        // spread to neighbors if the cell is full, otherwise regrow in the cell
+        if foodmap[index] == 255 {
+            foodmap[left]  = foodmap[left] .saturating_add(c::FOOD_REGROWTH_AMOUNT);
+            foodmap[right] = foodmap[right].saturating_add(c::FOOD_REGROWTH_AMOUNT);
+            foodmap[up]    = foodmap[up]   .saturating_add(c::FOOD_REGROWTH_AMOUNT);   
+            foodmap[down]  = foodmap[down] .saturating_add(c::FOOD_REGROWTH_AMOUNT);
+        }
+        else if foodmap[index] > 0 {
+            foodmap[index] = foodmap[index].saturating_add(c::FOOD_REGROWTH_AMOUNT);
+        }
+    }
+    /******************************************************************************************************************************************/
     /// update internal world statistics
     fn update_stats(&mut self) {
         let total_energy: f32 = self.energies.iter().sum();
@@ -607,40 +658,22 @@ impl World {
     /******************************************************************************************************************************************/
     /// decodes an output value into action and three parameters
     #[inline(always)]
-    fn decode_output(output: u64) -> (CreatureAction, u8, u8, u8, u16) {
+    fn decode_output(output: &u64) -> (CreatureAction, u8, u8, u8, u16) {
         // extract the value parameters
-        let value1 =
-            ((output & c::OUTPUT_VALUE1_MASK) >> c::OUTPUT_VALUE1_MASK.trailing_zeros()) as u8;
-        let value2 =
-            ((output & c::OUTPUT_VALUE2_MASK) >> c::OUTPUT_VALUE2_MASK.trailing_zeros()) as u8;
-        let value3 =
-            ((output & c::OUTPUT_VALUE3_MASK) >> c::OUTPUT_VALUE3_MASK.trailing_zeros()) as u8;
-        let fired_neurons_count: u16 = ((output & c::OUTPUT_FIRED_NEURONS_MASK)
-            >> c::OUTPUT_FIRED_NEURONS_MASK.trailing_zeros())
-            as u16;
-
-        // extract the bits that determine the action
         let action_bits = (output & c::OUTPUT_ACTION_MASK) as u8;
+        let value1 = ((output & c::OUTPUT_VALUE1_MASK) >> c::OUTPUT_VALUE1_MASK.trailing_zeros()) as u8;
+        let value2 = ((output & c::OUTPUT_VALUE2_MASK) >> c::OUTPUT_VALUE2_MASK.trailing_zeros()) as u8;
+        let value3 = ((output & c::OUTPUT_VALUE3_MASK) >> c::OUTPUT_VALUE3_MASK.trailing_zeros()) as u8;
+        let fired_neurons_count: u16 = ((output & c::OUTPUT_FIRED_NEURONS_MASK) >> c::OUTPUT_FIRED_NEURONS_MASK.trailing_zeros()) as u16;
 
-        // if it is zero we define it as Idle
-        let action = if action_bits == 0 {
-            CreatureAction::Idle
-        } else {
-            // we're focusing on the highest action bit
-            let highest_bit = 7 - action_bits.leading_zeros() as u8;
-
-            match 1 << highest_bit {
-                0b00000001 => CreatureAction::Reproduce,
-                0b00000010 => CreatureAction::Sleep,
-                0b00000100 => CreatureAction::Eat,
-                0b00001000 => CreatureAction::Move,
-                0b00010000 => CreatureAction::Idle,
-                0b00100000 => CreatureAction::Idle,
-                0b01000000 => CreatureAction::Idle,
-                0b10000000 => CreatureAction::Idle,
-                _ => CreatureAction::Idle,
-            }
-        };
+        // map the action - first match gets priority
+        let action = 
+                 if action_bits & c::BRAIN_OUTPUT_ACTION_EAT       == c::BRAIN_OUTPUT_ACTION_EAT       { CreatureAction::Eat       }
+            else if action_bits & c::BRAIN_OUTPUT_ACTION_MOVE      == c::BRAIN_OUTPUT_ACTION_MOVE      { CreatureAction::Move      }
+            else if action_bits & c::BRAIN_OUTPUT_ACTION_REPRODUCE == c::BRAIN_OUTPUT_ACTION_REPRODUCE { CreatureAction::Reproduce }
+            else if action_bits & c::BRAIN_OUTPUT_ACTION_SLEEP     == c::BRAIN_OUTPUT_ACTION_SLEEP     { CreatureAction::Sleep     }
+            else { CreatureAction::Idle };
+        
 
         (action, value1, value2, value3, fired_neurons_count)
     }
@@ -657,10 +690,11 @@ impl World {
     /// checks if there's food at the current position
     #[inline(always)]
     #[allow(dead_code)]
-    fn has_food(&self, pos: &Coordinate) -> bool {
+    fn has_food(&self, pos: &Coordinate) -> (bool, usize) {
         let x = (pos.x as usize).clamp(0,99);
         let y = (pos.y as usize).clamp(0,99);
-        self.foodmap[y * (c::WORLD_WIDTH as usize) + x] > 0
+        let index = y * (c::WORLD_WIDTH as usize) + x;
+        (self.foodmap[index] > 0, index)
     }
 
 }

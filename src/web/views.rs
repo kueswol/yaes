@@ -8,6 +8,6 @@ pub struct WorldView {
 
 #[derive(Serialize)]
 pub struct CreatureView {
-    pub x: u32,
-    pub y: u32,
+    pub x: f32,
+    pub y: f32,
 }

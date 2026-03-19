@@ -151,7 +151,10 @@ fn wait_forever() {
      }
 */
 
-// #[test]
-// fn test() {
+#[test]
+fn test() {
 
-// }
+    println!("=== TESTING ===\n");
+    for i in 0..100 { println!("{:3}", i); }
+    println!("\n===============");
+}

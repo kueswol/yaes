@@ -30,7 +30,7 @@ impl CreatureAction {
 pub enum CreatureEvent {
     None,
     Sleep,
-    Move { direction: f32, speed: f32 },
+    Move { sprint: bool },
     Eat,
     Reproduce,
     Die,

@@ -33,8 +33,6 @@
         Camera: <span id="camera_value"></span><br>
         tick: <span id="stat_tick"></span><br>
         population: <span id="stat_population"></span><br>
-        tick: <span id="stat_tick"></span><br>
-        population: <span id="stat_population"></span><br>
         avg_energy: <span id="stat_avg_energy"></span><br>
         avg_age: <span id="stat_avg_age"></span><br>
         births: <span id="stat_births"></span><br>
@@ -54,17 +52,17 @@
         const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
         const gl = canvas.getContext("webgl");
         // world
-        const worldWidth = 100;
-        const worldHeight = 100;
-        
+        const SCALE = 1;
+        const worldWidth = 100 * SCALE;
+        const worldHeight = 100 * SCALE;
+
         const MIN_ZOOM = 0.99;
         const MAX_ZOOM = 200;
         let cameraX = 50;
         let cameraY = 50;
         let zoom = 0.99;
         
-        const emptyData = new Uint8Array(worldWidth * worldHeight * 4); // Alles 0 (leer)
-        // const emptyData = new Uint8Array(worldWidth * worldHeight * 4); // Alles 1 (voll)
+        const emptyData = new Uint8Array((worldWidth / SCALE) * (worldHeight / SCALE) * 4); // Alles 0 (leer)
         ///////////////////////////////////////////////////////////////////////////////////////
         // FUNCTIONS
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -118,9 +116,9 @@
         }
         function updateOverlay() {
             document.getElementById("zoom_value")
-                .textContent = zoom.toFixed(2).toLocaleString();
+                .textContent = Number(zoom.toFixed(2)).toLocaleString();
             document.getElementById("camera_value")
-                .textContent = cameraX.toFixed(1).toLocaleString() + " | " + cameraY.toFixed(1).toLocaleString();
+                .textContent = Number(cameraX.toFixed(1)).toLocaleString() + " | " + Number(cameraY.toFixed(1)).toLocaleString();
         }
         function createGrid(worldWidth, worldHeight, cellSize) {
             const lines = [];
@@ -174,7 +172,6 @@
             cameraX = Math.max(halfW, Math.min(worldWidth - halfW, cameraX));
             cameraY = Math.max(halfH, Math.min(worldHeight - halfH, cameraY));
         }
-
         ///////////////////////////////////////////////////////////////////////////////////////
         // STUFF
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -191,7 +188,7 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, worldWidth, worldHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, emptyData);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, worldWidth / SCALE, worldHeight / SCALE, 0, gl.RGBA, gl.UNSIGNED_BYTE, emptyData);
 
         // shader sources
         const creatureVertexShaderSource = `
@@ -311,7 +308,7 @@
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 
-        const gridData = createGrid(100,100,10);
+        const gridData = createGrid(worldWidth, worldHeight, worldWidth/10);
         const gridBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, gridBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, gridData, gl.STATIC_DRAW);
@@ -392,24 +389,24 @@
             if (type === 1) {
                 // CREATURES
                 const positions = new Float32Array(payload.buffer,payload.byteOffset,payload.byteLength / 4);
+                for (let i = 0; i < positions.length; i++) positions[i] *= SCALE;
                 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
                 creatureLayer.count = positions.length / 2;
             }
             else if (type === 2) {
-                console.log("Received foodmap update with " + payload.length + " bytes");
+                // console.log("Received foodmap update with " + payload.length + " bytes");
                 // FOODMAP
                 gl.bindTexture(gl.TEXTURE_2D, foodTexture);
                 const rgbaData = new Uint8Array(payload.length * 4);
                 for (let i = 0; i < payload.length; i++) {
-                    const val = payload[i]; // 0 oder 1 (oder 0-255)
+                    const val = payload[i];    // 0-255 for food amount
                     rgbaData[i * 4] = val;     // R
                     rgbaData[i * 4 + 1] = 0;   // G
                     rgbaData[i * 4 + 2] = 0;   // B
-                    rgbaData[i * 4 + 3] = 255; // A (immer opak, oder val für Transparenz)
+                    rgbaData[i * 4 + 3] = val; // A
                 }
-                console.log("RGBA data sample:", rgbaData.slice(0, 16));
-                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,worldWidth,worldHeight,0,gl.RGBA,gl.UNSIGNED_BYTE,rgbaData);
+                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,worldWidth / SCALE,worldHeight / SCALE,0,gl.RGBA,gl.UNSIGNED_BYTE,rgbaData);
             }
             render();
         };
@@ -486,8 +483,8 @@
             const data = await response.json();
             document.getElementById("stat_tick").textContent = data.tick.toLocaleString();
             document.getElementById("stat_population").textContent = data.population.toLocaleString();
-            document.getElementById("stat_avg_energy").textContent = data.avg_energy.toFixed(2).toLocaleString();
-            document.getElementById("stat_avg_age").textContent = data.avg_age.toFixed(2).toLocaleString();
+            document.getElementById("stat_avg_energy").textContent = Number(data.avg_energy.toFixed(2)).toLocaleString();
+            document.getElementById("stat_avg_age").textContent = Number(data.avg_age.toFixed(2)).toLocaleString();
             document.getElementById("stat_births").textContent = data.births.toLocaleString();
             document.getElementById("stat_deaths").textContent = data.deaths.toLocaleString();
             document.getElementById("stat_eat_success").textContent = data.eat_success.toLocaleString();
