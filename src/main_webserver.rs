@@ -69,7 +69,7 @@ async fn handle_socket(mut socket: WebSocket, world: Arc<Mutex<World>>) {
     loop {
         let mut buffer: Vec<u8>;
 
-        if msg_counter & 511_u64 == 0 {
+        if msg_counter & 255_u64 == 0 {
 
             let food = {
                 let world = world.lock().unwrap();

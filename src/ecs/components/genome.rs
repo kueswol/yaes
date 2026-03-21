@@ -27,6 +27,12 @@ impl Genome {
     pub fn from_dna(dna: &Dna) -> Self {
         let mut neurons = Vec::new();
 
+        // chunk explanation):
+        // - bytes 0-4: mask (which inputs this neuron reads, we mutate)
+        // - byte 5: kind (what type of neuron this is)
+        // - byte 6: threshold (how many inputs need to be active for the neuron to fire)
+        // - byte 7: target_bit (which bit this neuron outputs to)
+
         for chunk in dna.bytes.chunks_exact(8) {
             let mut mask_part =
                 (chunk[0] as u64) |

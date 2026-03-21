@@ -51,4 +51,5 @@ pub struct WorldStats {
     pub reproduce_success: u64,
     pub reproduce_failed_age: u64,
     pub reproduce_failed_energy: u64,
+    pub reproduce_failed_cooldown: u64,
 }

@@ -24,25 +24,48 @@
             font-size:14px;
             border-radius:6px;
         }
+        #creature-details {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 250px;
+            max-height: 80vh;
+            overflow-y: auto;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
     <canvas id="world"></canvas>
     <div id="overlay">
-        Zoom: <span id="zoom_value"></span><br>
-        Camera: <span id="camera_value"></span><br>
-        tick: <span id="stat_tick"></span><br>
-        population: <span id="stat_population"></span><br>
-        avg_energy: <span id="stat_avg_energy"></span><br>
-        avg_age: <span id="stat_avg_age"></span><br>
-        births: <span id="stat_births"></span><br>
-        deaths: <span id="stat_deaths"></span><br>
-        eat_success: <span id="stat_eat_success"></span><br>
-        eat_failed: <span id="stat_eat_failed"></span><br>
-        reproduce_success: <span id="stat_reproduce_success"></span><br>
-        reproduce_failed_age: <span id="stat_reproduce_failed_age"></span><br>
-        reproduce_failed_energy: <span id="stat_reproduce_failed_energy"></span>
-    </div>    
+        <table style="border: 0;">
+            <tr><td>Zoom:</td>               <td><span id="zoom_value">                    </span></td></tr>
+            <tr><td>Camera:</td>             <td><span id="camera_value">                  </span></td></tr>
+            <tr><td>tick:</td>               <td><span id="stat_tick">                     </span></td></tr>
+            <tr><td>population:</td>         <td><span id="stat_population">               </span></td></tr>
+            <tr><td>avg_energy:</td>         <td><span id="stat_avg_energy">               </span></td></tr>
+            <tr><td>avg_age:</td>            <td><span id="stat_avg_age">                  </span></td></tr>
+            <tr><td>births:</td>             <td><span id="stat_births">                   </span></td></tr>
+            <tr><td>deaths:</td>             <td><span id="stat_deaths">                   </span></td></tr>
+            <tr><td>eat_success:</td>        <td><span id="stat_eat_success">              </span></td></tr>
+            <tr><td>eat_failed:</td>         <td><span id="stat_eat_failed">               </span></td></tr>
+            <tr><td>repro_success:</td>      <td><span id="stat_reproduce_success">        </span></td></tr>
+            <tr><td>repro_err_age:</td>      <td><span id="stat_reproduce_failed_age">     </span></td></tr>
+            <tr><td>repro_err_energy:</td>   <td><span id="stat_reproduce_failed_energy">  </span></td></tr>
+            <tr><td>repro_err_cooldown:</td> <td><span id="stat_reproduce_failed_cooldown"></span></td></tr>
+        </table>
+    </div>
+    <div id="creature-details">
+        <table style="border: 0;">
+            <tr><td>ID:</td>    <td><span id="detail_id">    </span></td></tr>
+            <tr><td>Energy:</td><td><span id="detail_energy"></span></td></tr>
+        </table>
+    </div>
     <script>
         ///////////////////////////////////////////////////////////////////////////////////////
         // VARS
@@ -52,9 +75,9 @@
         const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
         const gl = canvas.getContext("webgl");
         // world
-        const SCALE = 1;
-        const worldWidth = 100 * SCALE;
-        const worldHeight = 100 * SCALE;
+        const SCALE = 10;
+        const worldWidth = 200 * SCALE;
+        const worldHeight = 200 * SCALE;
 
         const MIN_ZOOM = 0.99;
         const MAX_ZOOM = 200;
@@ -62,7 +85,10 @@
         let cameraY = 50;
         let zoom = 0.99;
         
-        const emptyData = new Uint8Array((worldWidth / SCALE) * (worldHeight / SCALE) * 4); // Alles 0 (leer)
+        const emptyData = new Uint8Array((worldWidth / SCALE) * (worldHeight / SCALE) * 4);
+        
+        let creatures = [];
+        
         ///////////////////////////////////////////////////////////////////////////////////////
         // FUNCTIONS
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -171,6 +197,19 @@
 
             cameraX = Math.max(halfW, Math.min(worldWidth - halfW, cameraX));
             cameraY = Math.max(halfH, Math.min(worldHeight - halfH, cameraY));
+        }
+        function checkCreatureClick(worldX, worldY) {
+            const clickRadius = 5; // radius in world units for clicking creatures
+            for (const creature of creatures) {
+                const dx = creature.x - worldX;
+                const dy = creature.y - worldY;
+                if (dx * dx + dy * dy < clickRadius * clickRadius) {
+                    loadCreatureDetails(creature.id);
+                    return;
+                }
+            }
+            // hide overlay if no creature was clicked
+            document.getElementById("creature-details").style.display = "none";
         }
         ///////////////////////////////////////////////////////////////////////////////////////
         // STUFF
@@ -378,7 +417,20 @@
             cameraY = mouseWorldY + (e.offsetY / canvas.height - 0.5) * worldHeight / zoom;
             clampCamera();
         };
-        // websocket
+
+        // creature selection
+        canvas.onclick = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const worldX = cameraX + (mouseX / canvas.width - 0.5) * worldWidth / zoom;
+            const worldY = cameraY - (mouseY / canvas.height - 0.5) * worldHeight / zoom;
+            checkCreatureClick(worldX, worldY);
+        };
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // Websocket
+        ///////////////////////////////////////////////////////////////////////////////////////
+
         const socket = new WebSocket("ws://" + location.host + "/ws");
         socket.binaryType = "arraybuffer";
         socket.onmessage = (event) => {
@@ -390,12 +442,12 @@
                 // CREATURES
                 const positions = new Float32Array(payload.buffer,payload.byteOffset,payload.byteLength / 4);
                 for (let i = 0; i < positions.length; i++) positions[i] *= SCALE;
+                
                 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
                 creatureLayer.count = positions.length / 2;
             }
             else if (type === 2) {
-                // console.log("Received foodmap update with " + payload.length + " bytes");
                 // FOODMAP
                 gl.bindTexture(gl.TEXTURE_2D, foodTexture);
                 const rgbaData = new Uint8Array(payload.length * 4);
@@ -410,6 +462,7 @@
             }
             render();
         };
+
         ///////////////////////////////////////////////////////////////////////////////////////
         // WebGL Layers
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -492,6 +545,7 @@
             document.getElementById("stat_reproduce_success").textContent = data.reproduce_success.toLocaleString();
             document.getElementById("stat_reproduce_failed_age").textContent = data.reproduce_failed_age.toLocaleString();
             document.getElementById("stat_reproduce_failed_energy").textContent = data.reproduce_failed_energy.toLocaleString();
+            document.getElementById("stat_reproduce_failed_cooldown").textContent = data.reproduce_failed_cooldown.toLocaleString();
         }
         interval_updateWorld   = setInterval(updateWorldStats, 2000);
 

@@ -155,6 +155,6 @@ fn wait_forever() {
 fn test() {
 
     println!("=== TESTING ===\n");
-    for i in 0..100 { println!("{:3}", i); }
+    println!("{:08b}", ((8 > 4) as u8) << 2);
     println!("\n===============");
 }

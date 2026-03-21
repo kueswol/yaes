@@ -1,10 +1,10 @@
 use crate::{
     constants as c,
-    ecs::components::{genome::Genome, *},
+    ecs::components::*,
     utils::*,
     web::views::*,
 };
-use rand::{Rng, SeedableRng, rngs::StdRng, seq::index};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 use rayon::prelude::*;
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -14,6 +14,7 @@ use rayon::prelude::*;
 pub struct World {
     // the world wide root of all "randomness"
     rng: rand::rngs::StdRng,
+    spatial_map: SpatialHashmap,
     pub foodmap: Vec<u8>,
 
     // statistics
@@ -21,12 +22,12 @@ pub struct World {
     pub seed: u64,
     pub deaths: u64,
     pub births: u64,
-    pub successfully_reproducing_dna: Vec<String>,
     pub eat_success: u64,
     pub eat_failed: u64,
     pub reproduce_success: u64,
     pub reproduce_failed_age: u64,
     pub reproduce_failed_energy: u64,
+    pub reproduce_failed_cooldown: u64,
     pub avg_energy: f32,
     pub avg_age: f32,
     
@@ -36,14 +37,16 @@ pub struct World {
     ///    0b0001 = exists/alive
     ///    0b0010 = can_reproduce
     creatures: Vec<u8>,
-
+    
     // light components
     positions: Vec<Coordinate>,
     orientations: Vec<f32>,
     energies: Vec<f32>,
-    ages: Vec<u32>,
+    ages: Vec<u64>,
+    sizes: Vec<f32>,
     brain_inputs: Vec<u64>,
     brain_outputs: Vec<u64>,
+    reproduce_cooldown: Vec<u64>,
 
     // heavy components
     brains: Vec<Brain>,
@@ -66,17 +69,12 @@ impl World {
     pub fn new(rng_seed: u64) -> Self {
         let mut rng = StdRng::seed_from_u64(rng_seed);
 
-        // let mut foodmap: Vec<u8> = Vec::with_capacity(((c::WORLD_WIDTH + 1) * c::WORLD_HEIGHT) as usize);
-        // for i in 0..foodmap.len() {
-        //     foodmap[i] = rng.gen_bool(0.20) as u8;
-        // }
         let mut foodmap: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
         for i in 0..foodmap.len() {
-            foodmap[i] = if rng.gen_bool(0.20) { 255_u8 } else { 0_u8 };
+            // foodmap[i] = if rng.gen_bool(0.30) { 255_u8 } else { 0_u8 };
+            foodmap[i] = rng.gen_range(0..=255);
         }
-        // make sure there's always food at the spawn location
-        foodmap[50_usize * (c::WORLD_WIDTH as usize) + 50_usize] = 255_u8;
-        
+                
         Self {
             rng,
             foodmap,
@@ -84,24 +82,27 @@ impl World {
             seed: rng_seed,
             deaths: 0,
             births: 0,
-            successfully_reproducing_dna: Vec::new(),
             eat_success: 0,
             eat_failed: 0,
             reproduce_success: 0,
             reproduce_failed_age: 0,
             reproduce_failed_energy: 0,
+            reproduce_failed_cooldown: 0,
             avg_energy: 0.0,
             avg_age: 0.0,
             next_creature_id: 0,
+            spatial_map: SpatialHashmap::new(),
             creatures: Vec::with_capacity(c::MAX_POPULATION),
             positions: Vec::with_capacity(c::MAX_POPULATION),
             orientations: Vec::with_capacity(c::MAX_POPULATION),
             energies: Vec::with_capacity(c::MAX_POPULATION),
             ages: Vec::with_capacity(c::MAX_POPULATION),
+            sizes: Vec::with_capacity(c::MAX_POPULATION),
             brain_inputs: Vec::with_capacity(c::MAX_POPULATION),
             brain_outputs: Vec::with_capacity(c::MAX_POPULATION),
             brains: Vec::with_capacity(c::MAX_POPULATION),
             dnas: Vec::with_capacity(c::MAX_POPULATION),
+            reproduce_cooldown: Vec::with_capacity(c::MAX_POPULATION),
             pending_move: Vec::with_capacity(c::MAX_POPULATION),
             pending_eat: Vec::with_capacity(c::MAX_POPULATION),
             pending_sleep: Vec::with_capacity(c::MAX_POPULATION),
@@ -114,6 +115,7 @@ impl World {
     /******************************************************************************************************************************************/
     /// let the world tick
     pub fn tick(&mut self) {
+        
         self.update_brain_inputs();
         self.update_brain_outputs();
         self.handle_turning();
@@ -125,6 +127,8 @@ impl World {
         self.handle_energy_costs();
         self.handle_age_events();
         self.handle_deaths();
+        self.update_spatial_map();
+        // self.handle_separation();
 
         if self.tick_counter & c::FOOD_REGROWTH_TICKS == 0 {
             self.grow_food();
@@ -144,17 +148,21 @@ impl World {
         self.next_creature_id += 1;
 
         // prepare some values:
-        let new_creature_position: Coordinate =
-            position.unwrap_or_else(|| Coordinate { x: self.rng.gen_range(30.0..70.0), y: self.rng.gen_range(30.0..70.0) });
+        let new_creature_position: Coordinate = position.unwrap_or_else(|| Coordinate {
+                x: self.rng.gen_range((c::WORLD_WIDTH  as f32 * 0.05)..(c::WORLD_WIDTH  as f32 * 0.95)),
+                y: self.rng.gen_range((c::WORLD_HEIGHT as f32 * 0.05)..(c::WORLD_HEIGHT as f32 * 0.95))
+            });
         let new_orientation: f32 = self.rng.gen_range(0.0..std::f32::consts::TAU);
-        let new_creature_energy: f32 = 70.0;
-        let new_creature_birthtick: u32 = self.tick_counter as u32;
+        let new_creature_energy: f32 = 100.0;
+        let new_creature_birthtick: u64 = self.tick_counter;
         let new_creature_brain_input: u64 = 0;
         let new_creature_brain_output: u64 = 0;
 
-        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(384, &mut self.rng));
+        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(128, &mut self.rng)); // we had with 384 bytes
         let new_creature_genome: Genome = Genome::from_dna(&new_creature_dna);
         let new_creature_brain: Brain = Brain::recompile(&new_creature_genome);
+        let new_size: f32 = 0.2;
+        let new_creature_reproduce_cooldown: u64 = self.tick_counter + c::REPRODUCE_AGE_MIN - 10 + (self.rng.gen_range(0..20));
 
         // we trust, that all vectors are aligned, so new creatures and its components will just be pushed at the end of the vectors
         self.creatures.push(0b0000_0001);
@@ -162,10 +170,12 @@ impl World {
         self.orientations.push(new_orientation);
         self.energies.push(new_creature_energy);
         self.ages.push(new_creature_birthtick);
+        self.sizes.push(new_size);
         self.brain_inputs.push(new_creature_brain_input);
         self.brain_outputs.push(new_creature_brain_output);
         self.brains.push(new_creature_brain);
         self.dnas.push(new_creature_dna);
+        self.reproduce_cooldown.push(new_creature_reproduce_cooldown);
 
         true // return successfully spawned
     }
@@ -178,11 +188,13 @@ impl World {
         self.orientations.swap_remove(id);
         self.energies.swap_remove(id);
         self.ages.swap_remove(id);
+        self.sizes.swap_remove(id);
         self.brain_inputs.swap_remove(id);
         self.brain_outputs.swap_remove(id);
         self.brains.swap_remove(id);
         self.dnas.swap_remove(id);
-
+        self.reproduce_cooldown.swap_remove(id);
+        
         self.next_creature_id -= 1;
         self.deaths += 1;
     }
@@ -220,6 +232,7 @@ impl World {
             reproduce_success: self.reproduce_success,
             reproduce_failed_age: self.reproduce_failed_age,
             reproduce_failed_energy: self.reproduce_failed_energy,
+            reproduce_failed_cooldown: self.reproduce_failed_cooldown,
         }
     }
     
@@ -258,6 +271,7 @@ impl World {
 /// The ECS' systems
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 impl World {
+
     /******************************************************************************************************************************************/
     /// update each creature's sensoric brain inputs
     ///   [ 1] Energy low,              [ 2] Energy mid,              [ 3] Energy high,
@@ -286,20 +300,20 @@ impl World {
                 // energie low|mid|high
                 *input |= Self::encode_3bucket(
                     energies[entity_id],
-                    [c::BRAIN_INPUTS_ENERGY_LOW, c::BRAIN_INPUTS_ENERGY_MID],
+                    [c::BRAIN_INPUTS_BUCKET_NRGY_LOW_MID, c::BRAIN_INPUTS_BUCKET_NRGY_MID_HIGH],
                 ) << 0;
 
                 // pos.x left|center|right
                 let pos = &positions[entity_id];
                 *input |= Self::encode_3bucket(
                     pos.x,
-                    [c::BRAIN_INPUTS_POSX_LEFT, c::BRAIN_INPUTS_POSX_CENTER],
+                    [c::BRAIN_INPUTS_BUCKET_POSX_L_C, c::BRAIN_INPUTS_BUCKET_POSX_C_R],
                 ) << 3;
 
                 // pos.y top|center|bottom
                 *input |= Self::encode_3bucket(
                     pos.y,
-                    [c::BRAIN_INPUTS_POSY_TOP, c::BRAIN_INPUTS_POSY_CENTER],
+                    [c::BRAIN_INPUTS_BUCKET_POSY_T_C, c::BRAIN_INPUTS_BUCKET_POSY_C_B],
                 ) << 6;
 
                 // last action
@@ -315,10 +329,10 @@ impl World {
 
                 // age low|mid|high
                 *input |= Self::encode_3bucket(
-                    ((*tick_counter as u32) - ages[entity_id]) as f32,
+                    ((*tick_counter) - ages[entity_id]) as f32,
                     [
-                        c::BRAIN_INPUTS_AGE_LOW as f32,
-                        c::BRAIN_INPUTS_AGE_MID as f32,
+                        c::BRAIN_INPUTS_BUCKET_AGE_LOW_MID as f32,
+                        c::BRAIN_INPUTS_BUCKET_AGE_MID_HIGH as f32,
                     ],
                 ) << 15;
 
@@ -377,7 +391,7 @@ impl World {
                     match action {
                         CreatureAction::Move => {
                             let sprint: bool = (_value1 & c::BRAIN_OUTPUT_VALUE1_SPRINT) != 0;
-                            moves.push((entity_id, CreatureEvent::Move { sprint }));
+                            moves.push((entity_id, CreatureEvent::Move{ sprint }));
                         }
                         CreatureAction::Eat => {
                             eats.push((entity_id, CreatureEvent::Eat));
@@ -386,9 +400,12 @@ impl World {
                             sleeps.push((entity_id, CreatureEvent::Sleep));
                         }
                         CreatureAction::Reproduce => {
-                            if self.energies[entity_id] >= c::ENERGY_COST_REPRODUCE {
+                            // if self.energies[entity_id] >= c::ENERGY_COST_REPRODUCE {
                                 reproduces.push((entity_id, CreatureEvent::Reproduce));
-                            }
+                            // } else {
+                                // moves.push((entity_id, CreatureEvent::Move{ sprint: false })); // if they want to reproduce but don't have enough energy, we make them move instead, to hopefully find food
+                                // energy_cost += c::ENERGY_COST_REPRODUCE; // we still apply the energy cost, even if the creature can't reproduce, to encourage them to only reproduce when they have enough energy
+                            // }
                         }
                         CreatureAction::Idle => {
                             energy_cost += c::ENERGY_COST_IDLE;
@@ -457,8 +474,8 @@ impl World {
             let pos = &self.positions[entity_id];
             let (has_food, index) = self.has_food(pos);
             if has_food {
-                self.foodmap[index] = self.foodmap[index].saturating_sub(15_u8); // we subtract 15 because u8=255 has prime factors 3, 5 and 17
-                self.pending_energy_costs.push((entity_id, -20.0)); // negative cost = energy gain
+                self.foodmap[index] = self.foodmap[index].saturating_sub(c::ENERGY_COST_EAT as u8); // we subtract (add the negative) energy cost
+                self.pending_energy_costs.push((entity_id, c::ENERGY_COST_EAT)); // negative cost = energy gain
                 self.eat_success += 1;
                 return;
             }
@@ -480,9 +497,12 @@ impl World {
                         (self.positions[*entity_id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
                     self.positions[*entity_id].y =
                         (self.positions[*entity_id].y + dy).clamp(0.0, c::WORLD_HEIGHT as f32);
+                    
+                    let mut factor: f32 = 1.0;
+                    if *sprint { factor = 1.5; }
 
                     self.pending_energy_costs
-                        .push((*entity_id, c::ENERGY_COST_MOVE));
+                        .push((*entity_id, c::ENERGY_COST_MOVE * factor));
                 }
                 _ => {}
             }
@@ -516,21 +536,31 @@ impl World {
         }
 
         for (entity_id, _action) in reproductions {
-            let age = (self.tick_counter as u32) - self.ages[entity_id];
+            let age = (self.tick_counter) - self.ages[entity_id];
             if age < c::REPRODUCE_AGE_MIN || age > c::REPRODUCE_AGE_MAX {
                 self.reproduce_failed_age += 1;
                 continue;
             }
             if self.energies[entity_id] < c::ENERGY_COST_REPRODUCE {
                 self.reproduce_failed_energy += 1;
+                self.pending_energy_costs.push((entity_id, c::ENERGY_COST_REPRODUCE / 2.0));
                 continue;
             }
+            if self.reproduce_cooldown[entity_id] > self.tick_counter {
+                self.reproduce_failed_cooldown += 1;
+                continue;
+            }
+            
             let mut new_dna = self.dnas[entity_id].clone();
             self.reproduce_success += 1;
-            self.successfully_reproducing_dna.push(new_dna.to_compact_string());
-
+            self.creatures[entity_id] &= !c::CREATURE_BITFLAG_CAN_REPRODUCE; // reset reproduce ability until next age check
+            self.reproduce_cooldown[entity_id] = self.tick_counter + (c::REPRODUCE_AGE_MIN / 2) - 10 + (self.rng.gen_range(0..20)); // set reproduce cooldown
+            
             new_dna.mutate(&mut self.rng);
-            let new_position = self.positions[entity_id];
+            let new_position = Coordinate {
+                x: (self.positions[entity_id].x + self.rng.gen_range(-0.5..0.5)).clamp(0.0, c::WORLD_WIDTH as f32),
+                y: (self.positions[entity_id].y + self.rng.gen_range(-0.5..0.5)).clamp(0.0, c::WORLD_HEIGHT as f32),
+            };
 
             self.spawn_creature(Some(new_dna), Some(new_position));
 
@@ -576,7 +606,9 @@ impl World {
             .enumerate()
             .filter_map(|(entity_id, creature)| {
                 let age = tick_counter - ages[entity_id] as u64;
-                if age > c::REPRODUCE_AGE_MIN as u64 && age < c::REPRODUCE_AGE_MAX as u64 {
+                if age > c::REPRODUCE_AGE_MIN as u64 
+                && age < c::REPRODUCE_AGE_MAX as u64
+                && self.reproduce_cooldown[entity_id] == 0 {
                     *creature |= c::CREATURE_BITFLAG_CAN_REPRODUCE;
                 } else {
                     *creature &= !c::CREATURE_BITFLAG_CAN_REPRODUCE;
@@ -605,6 +637,65 @@ impl World {
         for entity_id in deaths {
             self.delete_creature(entity_id);
         }
+    }
+    
+    /******************************************************************************************************************************************/
+    /// schedule the creatures' actions based on their brain outputs
+    fn update_spatial_map(&mut self) {
+        let mut spatial_map = SpatialHashmap::new();
+        let positions = &self.positions;
+        
+        positions.iter().enumerate().for_each(|(entity_id, &position)| {
+                spatial_map.insert(entity_id, position);
+        });
+        self.spatial_map = spatial_map;
+    }
+    
+    /******************************************************************************************************************************************/
+    /// schedule the creatures' actions based on their brain outputs
+    #[allow(dead_code)]
+    fn handle_separation(&mut self) {
+        // collect adjustments locally as we shouldn't apply them immediately in the parallel loop
+        let mut position_adjustments: Vec<(usize, f32, f32)> = vec![(0, 0.0, 0.0); self.creatures.len()];
+        
+        position_adjustments.par_iter_mut().with_min_len(100).enumerate().for_each(|(id, adjustment)| {
+            let pos = self.positions[id];
+            let size = self.sizes[id];
+            let neighbors = self.spatial_map.get_creatures_in_cell(pos);
+            
+            for &other_id in &neighbors {
+                if id >= other_id { continue; } // prevent double checking pairs and self-checking
+                
+                let other_pos = self.positions[other_id];
+                let other_size = self.sizes[other_id];
+                let dx = pos.x - other_pos.x;
+                let dy = pos.y - other_pos.y;
+                let distance_sqr = dx * dx + dy * dy;
+                let min_distance = (size + other_size) as f32;
+                let min_distance_sqr = min_distance * min_distance;
+                
+                if distance_sqr >= min_distance_sqr || distance_sqr == 0.0 { continue; }
+                
+                let distance = distance_sqr.sqrt();
+                let overlap = min_distance - distance;
+                let nx = dx / distance;
+                let ny = dy / distance;
+                let half_overlap = overlap / 2.0;
+                
+                adjustment.0 = id;
+                adjustment.1 += nx * half_overlap;
+                adjustment.2 += ny * half_overlap;
+                
+            }
+        });
+        
+        // apply the collected adjustments
+        for (id, dx, dy) in position_adjustments {
+            if id != 0 || dx != 0.0 || dy != 0.0 {
+                self.positions[id].x = (self.positions[id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
+                self.positions[id].y = (self.positions[id].y + dy).clamp(0.0, c::WORLD_HEIGHT as f32);
+            }
+        } 
     }
 
     /******************************************************************************************************************************************/
@@ -635,7 +726,7 @@ impl World {
     fn update_stats(&mut self) {
         let total_energy: f32 = self.energies.iter().sum();
         self.avg_energy = total_energy / self.creatures.len() as f32;
-        let total_age: u32 = self.ages.iter().sum();
+        let total_age: u64 = self.ages.iter().sum();
         self.avg_age = self.tick_counter as f32 - (total_age as f32 / self.creatures.len() as f32);
     }
 }
@@ -668,8 +759,8 @@ impl World {
 
         // map the action - first match gets priority
         let action = 
-                 if action_bits & c::BRAIN_OUTPUT_ACTION_EAT       == c::BRAIN_OUTPUT_ACTION_EAT       { CreatureAction::Eat       }
-            else if action_bits & c::BRAIN_OUTPUT_ACTION_MOVE      == c::BRAIN_OUTPUT_ACTION_MOVE      { CreatureAction::Move      }
+                 if action_bits & c::BRAIN_OUTPUT_ACTION_MOVE      == c::BRAIN_OUTPUT_ACTION_MOVE      { CreatureAction::Move      }
+            else if action_bits & c::BRAIN_OUTPUT_ACTION_EAT       == c::BRAIN_OUTPUT_ACTION_EAT       { CreatureAction::Eat       }
             else if action_bits & c::BRAIN_OUTPUT_ACTION_REPRODUCE == c::BRAIN_OUTPUT_ACTION_REPRODUCE { CreatureAction::Reproduce }
             else if action_bits & c::BRAIN_OUTPUT_ACTION_SLEEP     == c::BRAIN_OUTPUT_ACTION_SLEEP     { CreatureAction::Sleep     }
             else { CreatureAction::Idle };
@@ -682,8 +773,8 @@ impl World {
     /// calculates the tick-age of a creature
     #[inline(always)]
     #[allow(dead_code)]
-    fn get_age(&mut self, creature_id: usize) -> u32 {
-        (self.tick_counter as u32) - self.ages[creature_id]
+    fn get_age(&mut self, creature_id: usize) -> u64 {
+        self.tick_counter - self.ages[creature_id]
     }
 
     /******************************************************************************************************************************************/
@@ -694,7 +785,7 @@ impl World {
         let x = (pos.x as usize).clamp(0,99);
         let y = (pos.y as usize).clamp(0,99);
         let index = y * (c::WORLD_WIDTH as usize) + x;
-        (self.foodmap[index] > 0, index)
+        (self.foodmap[index] as f32 + c::ENERGY_COST_EAT >= 0.0, index)
     }
 
 }
