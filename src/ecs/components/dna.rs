@@ -40,30 +40,38 @@ impl Dna {
         let type_hi1: u8 = 0;
         // let type_hi2: u8 = 2;
         let type_out: u8 = 4;
-        
-        // we'll use 40 bytes for the scaffold genes, so we need to subtract that from the random part of the DNA
-        // a length of 64 bytes (=8 Neurons) is assumed as the bare minimum
-        let mut len: usize = 64 - 40;
-        if length > len { len = length - 40; }
-        
-        let mut random_bytes = vec![0u8; len];
-        rng.fill(&mut random_bytes[..]);
-        bytes.extend_from_slice(&random_bytes);
 
-        // scaffold neuron, hidden1, reads "can_eat" & "energy_low" and outputs to bit 64
+        // scaffold neuron, hidden1, reads "can_eat", "energy_low" & "energy_medium" and outputs to bit 64
         //                  output, forwards hidden1's bit 64 to action bit 3 (eat)
-        bytes.extend_from_slice(&[ 0b00000001, 0b00000000, 0b00000100, 0b00000000, 0b00000000, type_hi1, 2_u8, 64_u8]);
+        bytes.extend_from_slice(&[ 0b00000011, 0b00000000, 0b00000100, 0b00000000, 0b00000000, type_hi1, 2_u8, 64_u8]);
         bytes.extend_from_slice(&[ 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b10000000, type_out, 1_u8,  2_u8]);
         
         // scaffold neuron, hidden1, reads "can_reproduce" & "energy_high" and outputs to bit 63
         //                  output, forwards hidden1's bit 63 to action bit 1 (reproduce)
         bytes.extend_from_slice(&[ 0b00000100, 0b01000000, 0b00000000, 0b00000000, 0b00000000, type_hi1, 2_u8, 63_u8]);
-        bytes.extend_from_slice(&[ 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b10000000, type_out, 1_u8,  0_u8]);
+        bytes.extend_from_slice(&[ 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b01000000, type_out, 1_u8,  0_u8]);
         
-        // one more scaffold output neuron triggering move - but with a random mask now
+        // scaffold neuron, hidden1, reads "energy_low" and outputs to bit 62
+        //                  output, forwards hidden1's bit 62 to action bit 4 (move)
+        bytes.extend_from_slice(&[ 0b00000001, 0b00000000, 0b00000000, 0b00000000, 0b00000000, type_hi1, 1_u8, 62_u8]);
+        bytes.extend_from_slice(&[ 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00100000, type_out, 1_u8,  3_u8]);
+        
+        // additional output neurons triggering move and turning - with random mask and threshold
         bytes.extend_from_slice(&[rng.gen_range(0..=0xFF), rng.gen_range(0..=0xFF), rng.gen_range(0..=0xFF),
                                   rng.gen_range(0..=0xFF), rng.gen_range(0..=0xFF),
                                   type_out, rng.gen_range(5..=12), 3_u8]);
+        bytes.extend_from_slice(&[rng.gen_range(0..=0xFF), rng.gen_range(0..=0xFF), rng.gen_range(0..=0xFF),
+                                  rng.gen_range(0..=0xFF), rng.gen_range(0..=0xFF),
+                                  type_out, rng.gen_range(4..=10), rng.gen_range(8_u8..=9_u8)]); // target_bit 9 oder 10
+        
+        // we'll use 64 bytes for the scaffold genes, so we need to subtract that from the random part of the DNA
+        // a length of 64 bytes (=8 Neurons) is assumed as the bare minimum - therefor we make sure, we're having at least 128 bytes
+        let mut len: usize = 128 - 64;
+        if length > len { len = length - 64; }
+        
+        let mut random_bytes = vec![0u8; len];
+        rng.fill(&mut random_bytes[..]);
+        bytes.extend_from_slice(&random_bytes);
 
         Self { bytes }
     }
@@ -79,16 +87,16 @@ impl Dna {
         //     }
         // }
 
-        for chunk in &mut self.bytes.chunks_exact_mut(8) {
+        for chunk in &mut self.bytes.chunks_exact_mut(8).skip(8) {
             // chunks 0-4 are used for the mask
             if rng.gen_bool(c::MUTATE_CHANCE_BIT_FLIP_MASK) {
                 let byte_index = rng.gen_range(0..=4);
                 let bit = 1 << rng.gen_range(0..8);
                 chunk[byte_index] ^= bit;
             }
-            // chunk 5 is the type - we don#t touch it for now
+            // chunk 5 is the type - we don't touch it for now
 
-            // chunk 6 is the threshold - we can mutate it a bit
+            // chunk 6 is the threshold - we can mutate it a bit by raiing or lowering it by 1
             if rng.gen_bool(c::MUTATE_CHANCE_CHANGE_THRESHOLD) {
                 if rng.gen_bool(0.5) { chunk[6] = chunk[6].saturating_add(1); }
                 else                 { chunk[6] = chunk[6].saturating_sub(1); }

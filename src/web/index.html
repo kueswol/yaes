@@ -38,29 +38,44 @@
             font-family: monospace;
             font-size: 14px;
         }
+        .stat_cell_left {
+            text-align: left;
+            padding-right: 10px;
+            width: 150px;
+        }
+        .stat_cell_right {
+            text-align: right;
+            font-weight: bold;
+            width: 150px;
+        }
     </style>
 </head>
 <body>
     <canvas id="world"></canvas>
     <div id="overlay">
         <table style="border: 0;">
-            <tr><td>Zoom:</td>               <td><span id="zoom_value">                    </span></td></tr>
-            <tr><td>Camera:</td>             <td><span id="camera_value">                  </span></td></tr>
-            <tr><td>tick:</td>               <td><span id="stat_tick">                     </span></td></tr>
-            <tr><td>population:</td>         <td><span id="stat_population">               </span></td></tr>
-            <tr><td>avg_energy:</td>         <td><span id="stat_avg_energy">               </span></td></tr>
-            <tr><td>avg_age:</td>            <td><span id="stat_avg_age">                  </span></td></tr>
-            <tr><td>births:</td>             <td><span id="stat_births">                   </span></td></tr>
-            <tr><td>deaths:</td>             <td><span id="stat_deaths">                   </span></td></tr>
-            <tr><td>eat_success:</td>        <td><span id="stat_eat_success">              </span></td></tr>
-            <tr><td>eat_failed:</td>         <td><span id="stat_eat_failed">               </span></td></tr>
-            <tr><td>repro_success:</td>      <td><span id="stat_reproduce_success">        </span></td></tr>
-            <tr><td>repro_err_age:</td>      <td><span id="stat_reproduce_failed_age">     </span></td></tr>
-            <tr><td>repro_err_energy:</td>   <td><span id="stat_reproduce_failed_energy">  </span></td></tr>
-            <tr><td>repro_err_cooldown:</td> <td><span id="stat_reproduce_failed_cooldown"></span></td></tr>
+            <tr><td class="stat_cell_left">Zoom:</td>               <td class="stat_cell_right"><span id="zoom_value">                    -</span></td></tr>
+            <tr><td class="stat_cell_left">Camera:</td>             <td class="stat_cell_right"><span id="camera_value">                  -</span></td></tr>
+            <tr><td class="stat_cell_left">tick:</td>               <td class="stat_cell_right"><span id="stat_tick">                     -</span></td></tr>
+            <tr><td colspan="2"><hr style="border-color: #555;"></td></tr>
+            <tr><td class="stat_cell_left">population:</td>         <td class="stat_cell_right"><span id="stat_population">               -</span></td></tr>
+            <tr><td class="stat_cell_left">births:</td>             <td class="stat_cell_right"><span id="stat_births">                   -</span></td></tr>
+            <tr><td class="stat_cell_left">deaths:</td>             <td class="stat_cell_right"><span id="stat_deaths">                   -</span></td></tr>
+            <tr><td colspan="2"><hr style="border-color: #555;"></td></tr>
+            <tr><td class="stat_cell_left">avg_energy:</td>         <td class="stat_cell_right"><span id="stat_avg_energy">               -</span></td></tr>
+            <tr><td class="stat_cell_left">avg_age:</td>            <td class="stat_cell_right"><span id="stat_avg_age">                  -</span></td></tr>
+            <tr><td colspan="2"><hr style="border-color: #555;"></td></tr>
+            <tr><td class="stat_cell_left">food available:</td>     <td class="stat_cell_right"><span id="stat_total_food">               -</span></td></tr>
+            <tr><td class="stat_cell_left">eat_success:</td>        <td class="stat_cell_right"><span id="stat_eat_success">              -</span></td></tr>
+            <tr><td class="stat_cell_left">eat_failed:</td>         <td class="stat_cell_right"><span id="stat_eat_failed">               -</span></td></tr>
+            <tr><td colspan="2"><hr style="border-color: #555;"></td></tr>
+            <tr><td class="stat_cell_left">repro_success:</td>      <td class="stat_cell_right"><span id="stat_reproduce_success">        -</span></td></tr>
+            <tr><td class="stat_cell_left">repro_err_age:</td>      <td class="stat_cell_right"><span id="stat_reproduce_failed_age">     -</span></td></tr>
+            <tr><td class="stat_cell_left">repro_err_energy:</td>   <td class="stat_cell_right"><span id="stat_reproduce_failed_energy">  -</span></td></tr>
+            <tr><td class="stat_cell_left">repro_err_cooldown:</td> <td class="stat_cell_right"><span id="stat_reproduce_failed_cooldown">-</span></td></tr>
         </table>
     </div>
-    <div id="creature-details">
+    <div id="creature-details" style="display: none;">
         <table style="border: 0;">
             <tr><td>ID:</td>    <td><span id="detail_id">    </span></td></tr>
             <tr><td>Energy:</td><td><span id="detail_energy"></span></td></tr>
@@ -75,7 +90,7 @@
         const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
         const gl = canvas.getContext("webgl");
         // world
-        const SCALE = 10;
+        const SCALE = 1;
         const worldWidth = 200 * SCALE;
         const worldHeight = 200 * SCALE;
 
@@ -133,7 +148,7 @@
             updateOverlay();
         }
         function resizeCanvas() {
-            const size = Math.min(canvas.width, canvas.height);
+            const size = Math.min(canvas.width, canvas.height) * 0.9;
             const offsetX = (canvas.width - size) / 2;
             const offsetY = (canvas.height - size) / 2;
             gl.viewport(offsetX, offsetY, size, size);
@@ -144,7 +159,7 @@
             document.getElementById("zoom_value")
                 .textContent = Number(zoom.toFixed(2)).toLocaleString();
             document.getElementById("camera_value")
-                .textContent = Number(cameraX.toFixed(1)).toLocaleString() + " | " + Number(cameraY.toFixed(1)).toLocaleString();
+                .textContent = Number(cameraX.toFixed(0)).toLocaleString() + "/" + Number(cameraY.toFixed(0)).toLocaleString();
         }
         function createGrid(worldWidth, worldHeight, cellSize) {
             const lines = [];
@@ -199,17 +214,31 @@
             cameraY = Math.max(halfH, Math.min(worldHeight - halfH, cameraY));
         }
         function checkCreatureClick(worldX, worldY) {
-            const clickRadius = 5; // radius in world units for clicking creatures
+            const clickRadius = 10; // radius in world units for clicking creatures
             for (const creature of creatures) {
                 const dx = creature.x - worldX;
                 const dy = creature.y - worldY;
                 if (dx * dx + dy * dy < clickRadius * clickRadius) {
+                    console.log("Clicked creature ID:", creature.id);
                     loadCreatureDetails(creature.id);
                     return;
                 }
             }
             // hide overlay if no creature was clicked
             document.getElementById("creature-details").style.display = "none";
+        }
+        async function loadCreatureDetails(id) {
+            try {
+                const response = await fetch(`/creature/${id}`);
+                const data = await response.json();
+                // Fülle das Overlay
+                document.getElementById("detail_id").textContent = data.id;
+                document.getElementById("detail_energy").textContent = data.energy;
+                // Overlay anzeigen
+                document.getElementById("creature-details").style.display = "block";
+            } catch (error) {
+                console.error("Fehler beim Laden der Kreatur-Details:", error);
+            }
         }
         ///////////////////////////////////////////////////////////////////////////////////////
         // STUFF
@@ -385,15 +414,42 @@
 
         // mouse panning
         let dragging = false;
-        canvas.onmousedown = () => dragging = true;
-        canvas.onmouseup = () => dragging = false;
+        let mouseDown = false;
+        canvas.onmousedown = (e) => {
+            mouseDown = true;
+            dragging = false; // Reset
+        };
+        canvas.onmouseup = (e) => {
+            if (!dragging && mouseDown) {
+                // Handle click (nur wenn nicht gedraggt)
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const size = Math.min(canvas.width, canvas.height) * 0.9;
+                const offsetX = (canvas.width - size) / 2;
+                const offsetY = (canvas.height - size) / 2;
+                const viewportX = mouseX - offsetX;
+                const viewportY = mouseY - offsetY;                
+                if (viewportX >= 0 && viewportX <= size && viewportY >= 0 && viewportY <= size) {
+                    const worldX = cameraX + (viewportX / size - 0.5) * worldWidth / zoom;
+                    const worldY = cameraY - (viewportY / size - 0.5) * worldHeight / zoom;
+                    console.log("Clicked at world:", worldX, worldY);
+                    checkCreatureClick(worldX, worldY);
+                }
+            }
+            mouseDown = false;
+            dragging = false;
+        };
         canvas.onmousemove = (e) => {
-            if (!dragging) return;
-            const worldPerPixelX = worldWidth / canvas.width;
-            const worldPerPixelY = worldHeight / canvas.height;
-            cameraX -= e.movementX * worldPerPixelX / zoom;
-            cameraY -= e.movementY * worldPerPixelY / zoom;
-            clampCamera();
+            if (mouseDown) {
+                dragging = true; // Bewegung erkannt
+                const worldPerPixelX = worldWidth / canvas.width;
+                const worldPerPixelY = worldHeight / canvas.height;
+                cameraX -= e.movementX * worldPerPixelX / zoom;
+                cameraY -= e.movementY * worldPerPixelY / zoom;
+                clampCamera();
+            }
         };
 
         // mouse zooming
@@ -419,14 +475,15 @@
         };
 
         // creature selection
-        canvas.onclick = (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            const worldX = cameraX + (mouseX / canvas.width - 0.5) * worldWidth / zoom;
-            const worldY = cameraY - (mouseY / canvas.height - 0.5) * worldHeight / zoom;
-            checkCreatureClick(worldX, worldY);
-        };
+        // canvas.onclick = (e) => {
+        //     const rect = canvas.getBoundingClientRect();
+        //     const mouseX = e.clientX - rect.left;
+        //     const mouseY = e.clientY - rect.top;
+        //     const worldX = cameraX + (mouseX / canvas.width - 0.5) * worldWidth / zoom;
+        //     const worldY = cameraY - (mouseY / canvas.height - 0.5) * worldHeight / zoom;
+        //     console.log("Clicked at world:", worldX, worldY);
+        //     checkCreatureClick(worldX, worldY);
+        // };
         ///////////////////////////////////////////////////////////////////////////////////////
         // Websocket
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -440,14 +497,29 @@
             
             if (type === 1) {
                 // CREATURES
-                const positions = new Float32Array(payload.buffer,payload.byteOffset,payload.byteLength / 4);
-                for (let i = 0; i < positions.length; i++) positions[i] *= SCALE;
-                
-                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
-                creatureLayer.count = positions.length / 2;
+                creatures = [];
+                // const positions = [];
+                const view = new DataView(payload.buffer, payload.byteOffset);
+                const chunkSize = 23 // 23 Bytes pro Kreatur: u32 (id) + f32 (x) + f32 (y) + f32 (size) + [u8; 3] (color) + f32 (orientation)
+                for (let i = 0; i < payload.length; i += chunkSize) { 
+                    const id = view.getUint32(i, true); // Little-endian
+                    const x = view.getFloat32(i + 4, true) * SCALE;
+                    const y = view.getFloat32(i + 8, true) * SCALE;
+                    const size = view.getFloat32(i + 12, true);
+                    const r = payload[i + 16] / 255.0;
+                    const g = payload[i + 17] / 255.0;
+                    const b = payload[i + 18] / 255.0;
+                    const orientation = view.getFloat32(i + 19, true);
+                    creatures.push({ id, x, y, size, color: [r, g, b], orientation });
+                    // positions.push(x, y); // Für WebGL
+                }
+
+                // gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
+                creatureLayer.count = creatures.length;
             }
             else if (type === 2) {
+                console.log("Received foodmap update");
                 // FOODMAP
                 gl.bindTexture(gl.TEXTURE_2D, foodTexture);
                 const rgbaData = new Uint8Array(payload.length * 4);
@@ -538,6 +610,7 @@
             document.getElementById("stat_population").textContent = data.population.toLocaleString();
             document.getElementById("stat_avg_energy").textContent = Number(data.avg_energy.toFixed(2)).toLocaleString();
             document.getElementById("stat_avg_age").textContent = Number(data.avg_age.toFixed(2)).toLocaleString();
+            document.getElementById("stat_total_food").textContent = data.total_food.toLocaleString();
             document.getElementById("stat_births").textContent = data.births.toLocaleString();
             document.getElementById("stat_deaths").textContent = data.deaths.toLocaleString();
             document.getElementById("stat_eat_success").textContent = data.eat_success.toLocaleString();

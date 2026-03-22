@@ -17,7 +17,7 @@ pub async fn start_webserver(world: Arc<Mutex<World>>) {
     let app = Router::new()
         .route("/", get(root))
         .route("/world", get(world_stats))
-        .route("/creatures", get(creatures))
+        .route("/creature/{id}", get(creature_detail))
         .route("/ws", get(ws_handler))
         .with_state(world);
 
@@ -48,10 +48,13 @@ async fn world_stats(State(world): State<Arc<Mutex<World>>>) -> Json<WorldStats>
 }
 
 /******************************************************************************************************************************************/
-/// route "/creatures"
-async fn creatures(State(world): State<Arc<Mutex<World>>>) -> Json<Vec<CreatureView>> {
+/// route "/creature/:id"
+async fn creature_detail(
+    State(world): State<Arc<Mutex<World>>>,
+    axum::extract::Path(id): axum::extract::Path<usize>,
+) -> Json<CreatureDetailView> {
     let world = world.lock().unwrap();
-    Json(world.creatures_view())
+    Json(world.get_creature_detail_view(id))
 }
 
 /******************************************************************************************************************************************/
@@ -69,7 +72,7 @@ async fn handle_socket(mut socket: WebSocket, world: Arc<Mutex<World>>) {
     loop {
         let mut buffer: Vec<u8>;
 
-        if msg_counter & 255_u64 == 0 {
+        if msg_counter & 31_u64 == 0 {
 
             let food = {
                 let world = world.lock().unwrap();
@@ -84,13 +87,27 @@ async fn handle_socket(mut socket: WebSocket, world: Arc<Mutex<World>>) {
 
             let creatures = {
                 let world = world.lock().unwrap();
-                world.creatures_view().into_iter().take(50000).collect::<Vec<_>>() // limit to 50k creatures for performance
+                world.get_creatures_view().into_iter().take(50000).collect::<Vec<_>>() // limit to 50k creatures for performance
             };
-            buffer = Vec::with_capacity(1 + creatures.len()*8); // "* 8" because each creature has 2 f32 values (x and y) which are 4 bytes each
+            
+            // "* 19" because each creature has the following fields:
+            // - u32 `id` --> 4 Bytes
+            // - f32 `x` --> 4 Bytes
+            // - f32 `y` --> 4 Bytes
+            // - f32 `size` --> 4 Bytes
+            // - [u8; 3] `color` --> 3 Bytes
+            // - f32 `orientation` --> 4 Bytes
+            buffer = Vec::with_capacity(1 + creatures.len() * 23);
             buffer.push(MSG_CREATURES);
-            for c in creatures {
+            for (id , c) in creatures.iter().enumerate() {
+                buffer.extend_from_slice(&(id as u32).to_le_bytes());
                 buffer.extend_from_slice(&(c.x as f32).to_le_bytes());
                 buffer.extend_from_slice(&(c.y as f32).to_le_bytes());
+                buffer.extend_from_slice(&(c.size as f32).to_le_bytes());
+                buffer.push(c.color[0]);
+                buffer.push(c.color[1]);
+                buffer.push(c.color[2]);
+                buffer.extend_from_slice(&(c.orientation as f32).to_le_bytes());
             }
             msg_counter += 1;
         

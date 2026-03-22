@@ -44,6 +44,7 @@ pub struct WorldStats {
     pub population: u64,
     pub avg_energy: f32,
     pub avg_age: f32,
+    pub total_food: u64,
     pub births: u64,
     pub deaths: u64,
     pub eat_success: u64,
