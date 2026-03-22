@@ -165,11 +165,11 @@ impl World {
         let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(160, &mut self.rng)); // we had with 384 bytes
         let new_creature_genome: Genome = Genome::from_dna(&new_creature_dna);
         let new_creature_brain: Brain = Brain::recompile(&new_creature_genome);
-        let new_size: f32 = 0.2;
+        let new_size: f32 = 0.1 + (0.9 * (new_creature_dna.bytes[67] as f32 / 255.0)); // size between 0.1 and 1.0 based on a dna byte
         let new_creature_color: [u8; 3] = [
-            new_creature_dna.bytes[11],
-            new_creature_dna.bytes[22],
-            new_creature_dna.bytes[33]
+            new_creature_dna.bytes[66],
+            new_creature_dna.bytes[77],
+            new_creature_dna.bytes[88]
         ];
         let new_creature_reproduce_cooldown: u64 = self.tick_counter + c::REPRODUCE_AGE_MIN - 10 + (self.rng.gen_range(0..20));
 
@@ -532,8 +532,8 @@ impl World {
             match action {
                 CreatureEvent::Move { sprint } => {
                     let speed = if *sprint { c::CREATURE_SPEED_SPRINT } else { c::CREATURE_SPEED };
-                    let dx = self.orientations[*entity_id].cos() * speed;
-                    let dy = self.orientations[*entity_id].sin() * speed;
+                    let dx = self.orientations[*entity_id].cos() * (speed / self.sizes[*entity_id]);
+                    let dy = self.orientations[*entity_id].sin() * (speed / self.sizes[*entity_id]);
 
                     self.positions[*entity_id].x =
                         (self.positions[*entity_id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);

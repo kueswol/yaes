@@ -14,7 +14,7 @@ pub const WORLD_WIDTH                   : u32   = 200;
 pub const WORLD_HEIGHT                  : u32   = 200;
 pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   = 5;   // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT
 
-pub const FOOD_REGROWTH_TICKS           : u64   =  3;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
+pub const FOOD_REGROWTH_TICKS           : u64   =  7;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
 pub const FOOD_REGROWTH_AMOUNT          : u8    = 15;  // primefactors of 255 would be 3, 5, 17   
 
 /// ---------------------------------------------------------------------------------------------------------
@@ -37,8 +37,8 @@ pub const ENERGY_COST_IDLE                 : f32   =  10.0;
 pub const REPRODUCE_AGE_MIN                : u64   =  250;
 pub const REPRODUCE_AGE_MAX                : u64   = 5000;
 
-pub const CREATURE_SPEED                   : f32   =    0.3;
-pub const CREATURE_SPEED_SPRINT            : f32   =    0.5;
+pub const CREATURE_SPEED                   : f32   =    0.06; // Base Speed - will be divided by size
+pub const CREATURE_SPEED_SPRINT            : f32   =    0.10; // Base Speed - will be divided by size
 pub const CREATURE_MAX_AGE                 : u64   = 5000;
 
 pub const CREATURE_BITFLAG_IS_ALIVE        : u8    = 0b0000_0001;

@@ -260,26 +260,50 @@
 
         // shader sources
         const creatureVertexShaderSource = `
-        attribute vec2 position;
+        attribute vec2 position;       // creature center position
+        attribute vec2 triangleVertex; // triangle corner offset (-1..1)
+        attribute vec3 vertexColor;    // RGB color
+        attribute float size;          // creature size (0..1)
+        attribute float orientation;   // rotation in radians [0, 2π)
+        
         uniform vec2 worldSize;
         uniform vec2 camera;
         uniform float zoom;
+        
+        varying vec3 v_color;
+        
         void main() {
-            vec2 world = (position - camera) * zoom;
+            // Scale triangle vertex by size (e.g., 0.2 → 0.2 units radius)
+            vec2 scaledOffset = triangleVertex * size;
+            
+            // Rotate based on creature orientation
+            float orientation_corrected_for_gl = orientation - 1.57079632679; // -π/2 to align with grid in simulation
+            float cos_o = cos(orientation_corrected_for_gl);
+            float sin_o = sin(orientation_corrected_for_gl);
+            vec2 rotated = vec2(
+                scaledOffset.x * cos_o - scaledOffset.y * sin_o,
+                scaledOffset.x * sin_o + scaledOffset.y * cos_o
+            );
+            
+            // Final world position
+            vec2 worldPos = position + rotated;
+            vec2 world = (worldPos - camera) * zoom;
             vec2 clip = vec2(
                 world.x / worldSize.x * 2.0,
                 world.y / worldSize.y * 2.0
             );
+            
             gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
-            gl_PointSize = 6.0;
+            v_color = vertexColor;
         }
         `;
         
         const creatureFragmentShaderSource = `
         precision mediump float;
-
+        varying vec3 v_color;
+        
         void main() {
-            gl_FragColor = vec4(0.2,0.9,0.3,1.0);
+            gl_FragColor = vec4(v_color,1.0);
         }
         `;
         
@@ -340,7 +364,9 @@
 
         // compile shaders
         const creatureVertexShader = createShader(gl, gl.VERTEX_SHADER, creatureVertexShaderSource);
+        if (!creatureVertexShader) { console.error('Creature Vertex Shader failed'); }
         const creatureFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, creatureFragmentShaderSource);
+        if (!creatureFragmentShader) { console.error('Creature Fragment Shader failed'); }
         const gridVertexShader = createShader(gl, gl.VERTEX_SHADER, gridVertexShaderSource);
         const gridFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, gridFragmentShaderSource);
         const foodmapVertexShader = createShader(gl, gl.VERTEX_SHADER, foodmapVertexShaderSource);
@@ -375,6 +401,19 @@
         // buffer for batch rendering
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+        // Triangle vertices (asymmetric arrow pointing up)
+        // Vertex 1: tip (front)
+        // Vertex 2: bottom-left (rear-left)
+        // Vertex 3: bottom-right (rear-right)
+        const triangleVertices = new Float32Array([
+            0.0,  1.0,   // Spitze vorne
+            -0.5, -1.0,  // hinten links
+            0.5, -1.0    // hinten rechts
+        ]);
+        const triangleBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, triangleBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, triangleVertices, gl.STATIC_DRAW);
 
         const gridData = createGrid(worldWidth, worldHeight, worldWidth/10);
         const gridBuffer = gl.createBuffer();
@@ -505,7 +544,7 @@
                     const id = view.getUint32(i, true); // Little-endian
                     const x = view.getFloat32(i + 4, true) * SCALE;
                     const y = view.getFloat32(i + 8, true) * SCALE;
-                    const size = view.getFloat32(i + 12, true);
+                    const size = Math.max(view.getFloat32(i + 12, true), 0.5);
                     const r = payload[i + 16] / 255.0;
                     const g = payload[i + 17] / 255.0;
                     const b = payload[i + 18] / 255.0;
@@ -581,22 +620,65 @@
                 gl.drawArrays(gl.LINES, 0, this.count);
             }
         };
+        const creatureAttrLocs = {
+            position: null,
+            triangleVertex: null,
+            vertexColor: null,
+            size: null,
+            orientation: null
+        };
         const creatureLayer = {
-            program: createProgram(gl, creatureVertexShaderSource, creatureFragmentShaderSource),
-            buffer: positionBuffer,
+            program: creatureProgram,
             count: 0,
 
             draw() {
                 gl.useProgram(this.program);
                 setCamera(gl, this.program);
 
-                const posLoc = gl.getAttribLocation(this.program, "position");
+                // Cache locations on first draw
+                if (creatureAttrLocs.position === null) {
+                    creatureAttrLocs.position = gl.getAttribLocation(this.program, "position");
+                    creatureAttrLocs.triangleVertex = gl.getAttribLocation(this.program, "triangleVertex");
+                    creatureAttrLocs.vertexColor = gl.getAttribLocation(this.program, "vertexColor");
+                    creatureAttrLocs.size = gl.getAttribLocation(this.program, "size");
+                    creatureAttrLocs.orientation = gl.getAttribLocation(this.program, "orientation");
+                }
+                // Disable all vertex attrib arrays except triangleVertex
+                gl.disableVertexAttribArray(creatureAttrLocs.position);
+                gl.disableVertexAttribArray(creatureAttrLocs.vertexColor);
+                gl.disableVertexAttribArray(creatureAttrLocs.size);
+                gl.disableVertexAttribArray(creatureAttrLocs.orientation);
+                
+                // Enable ONLY the triangleVertex array (the buffer-based one)
+                gl.bindBuffer(gl.ARRAY_BUFFER, triangleBuffer);
+                gl.enableVertexAttribArray(creatureAttrLocs.triangleVertex);
+                gl.vertexAttribPointer(creatureAttrLocs.triangleVertex, 2, gl.FLOAT, false, 0, 0);
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
-                gl.enableVertexAttribArray(posLoc);
-                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-                gl.drawArrays(gl.POINTS, 0, this.count);
+                for (let c = 0; c < creatures.length; c++) {
+                    const creature = creatures[c];
+                    
+                    // Position attribute
+                    gl.vertexAttrib2f(creatureAttrLocs.position, creature.x, creature.y);
+                    
+                    // Color attribute
+                    gl.vertexAttrib3f(creatureAttrLocs.vertexColor, creature.color[0], creature.color[1], creature.color[2]);
+                    
+                    // Size attribute
+                    gl.vertexAttrib1f(creatureAttrLocs.size, creature.size);
+                    
+                    // Orientation attribute
+                    gl.vertexAttrib1f(creatureAttrLocs.orientation, creature.orientation);
+                    
+                    // Draw 3 vertices per creature (one triangle)
+                    gl.drawArrays(gl.TRIANGLES, 0, 3);
+                        
+                    //     // Triangle vertices buffer
+                    //     gl.bindBuffer(gl.ARRAY_BUFFER, triangleBuffer);
+                    //     const triangleLoc = gl.getAttribLocation(this.program, "triangleVertex");
+                    //     gl.enableVertexAttribArray(triangleLoc);
+                    //     gl.vertexAttribPointer(triangleLoc, 2, gl.FLOAT, false, 0, 0);
+                    
+                }
             }
         };
 
