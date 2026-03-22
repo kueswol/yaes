@@ -114,6 +114,6 @@ async fn handle_socket(mut socket: WebSocket, world: Arc<Mutex<World>>) {
         }
 
         if socket.send(Message::Binary(buffer.into())).await.is_err() { break; }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 }

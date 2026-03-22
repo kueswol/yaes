@@ -429,7 +429,7 @@ impl World {
                     let mut energy_cost = (fired_neurons_count as f32) * c::ENERGY_COST_FIRED_NEURON;
                     match action {
                         CreatureAction::Move => {
-                            let sprint: bool = (_value1 & c::BRAIN_OUTPUT_VALUE1_SPRINT) != 0;
+                            let sprint: bool = (_value1 & c::BRAIN_OUTPUT_VALUE1_MOVE_FAST) != 0;
                             moves.push((entity_id, CreatureEvent::Move{ sprint }));
                         }
                         CreatureAction::Eat => {
@@ -488,20 +488,28 @@ impl World {
             .for_each(move |(entity_id, orientation)| {
                 let brain_output = brain_outputs[entity_id];
                 let value1 = Self::decode_output(&brain_output).1;
-                let turn_left : bool = (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_LEFT ) != 0;
-                let turn_right: bool = (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_RIGHT) != 0;                
+                
+                // order matters - normal turning > fast turning > slow turning,
+                // so we overwrite the turn_left and turn_right values accordingly
+                let mut turn_left: f32 = 0.0;
+                turn_left = if (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_L_SLOW) != 0 { 0.017 } else { turn_left };
+                turn_left = if (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_L_FAST) != 0 { 0.175 } else { turn_left };
+                turn_left = if (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_L_NORM) != 0 { 0.087 } else { turn_left };
+                let mut turn_right: f32 = 0.0;
+                turn_right = if (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_R_SLOW) != 0 { 0.017 } else { turn_right };
+                turn_right = if (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_R_FAST) != 0 { 0.175 } else { turn_right };
+                turn_right = if (value1 & c::BRAIN_OUTPUT_VALUE1_TURN_R_NORM) != 0 { 0.087 } else { turn_right };
+                
+                // both values are applied to the delta, so if both turn left and turn right are activated,
+                // they will cancel each other out to some extent
                 let mut delta: f32 = 0.0;
-                if turn_left  { delta += -5.0 };
-                if turn_right { delta +=  5.0 };
+                delta -= turn_left;
+                delta += turn_right;
                 *orientation += delta;
+                
                 // clamping to rad
                 *orientation = orientation.rem_euclid(std::f32::consts::TAU);
-                // if *orientation < std::f32::consts::TAU {
-                //     *orientation += std::f32::consts::TAU;
-                // }
-                // else if *orientation >= std::f32::consts::TAU {
-                //     *orientation -= std::f32::consts::TAU;
-                // }
+                
             });
     }
 
