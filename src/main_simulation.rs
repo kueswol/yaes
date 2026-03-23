@@ -1,23 +1,35 @@
 #[allow(dead_code)]
 use crate::ecs::World;
-use crate::utils::WorldStats;
+use crate::utils::*;
 use std::{
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 
-pub fn run_simulation(world: Arc<Mutex<World>>) {
-    let target_tps: f64 = 30.0;
-    let target_tick_duration: Duration = Duration::from_secs_f64(1.0 / target_tps);
-    let mut tick_durations: Vec<Duration> = vec![Duration::new(0, 0);32];
+/******************************************************************************************************************************************/
+/// the main simulation loop
+pub fn run_simulation(
+    world: Arc<Mutex<World>>,
+    channel_web2sim_rx: std::sync::mpsc::Receiver<ChannelWeb2SimMessage>,
+) {
+    let target_tps: f64 = 25.0;
+    let mut target_tick_duration: Duration = Duration::from_secs_f64(1.0 / target_tps);
+    let mut tick_durations: Vec<Duration> = vec![Duration::new(0, 0); 32];
     let mut stats: WorldStats;
-    
-    println!("[SIM  ]: simulation loop ready - sleeping 5 sec");
-    thread::sleep(std::time::Duration::from_secs(5));
+    let mut paused: bool = true;
+
     println!("[SIM  ]: Starting simulation loop");
-    
+    println!("[SIM  ]: - it will be paused until the webserver sends a resume command");
+
     loop {
+        process_web2sim_messages(&mut paused, &mut target_tick_duration, &channel_web2sim_rx);
+
+        while paused {
+            thread::sleep(Duration::from_millis(100));
+            process_web2sim_messages(&mut paused, &mut target_tick_duration, &channel_web2sim_rx);
+        }
+
         let tick_duration_start = Instant::now();
         {
             let mut world = world.lock().unwrap();
@@ -29,7 +41,8 @@ pub fn run_simulation(world: Arc<Mutex<World>>) {
         let index: usize = (stats.tick & 31_u64) as usize;
         tick_durations[index] = tick_duration;
         if index == 0 {
-            let avg_tick_duration: Duration = tick_durations.iter().sum::<Duration>() / (tick_durations.len() as u32);
+            let avg_tick_duration: Duration =
+                tick_durations.iter().sum::<Duration>() / (tick_durations.len() as u32);
             println!(
                 "[SIM  ]: Tick {:8}: {:5} creatures | tick: {:5}µs | avg: {:5}µs (≙ {:5.1}tps)",
                 stats.tick,
@@ -39,22 +52,33 @@ pub fn run_simulation(world: Arc<Mutex<World>>) {
                 1.0 / avg_tick_duration.as_secs_f64()
             );
         }
-        // if stats.tick % 1000 == 0 {
-        //     println!(
-        //         "[SIM  ]: Tick {:5}: {:6} creatures, *{}, †{}, AvgE:{:0.2}, AvgAge:{:0.2}, Eat:{}✓|{}✕, Repro:{}✓|{}✕(Age)|{}✕(E)",
-        //         stats.tick,
-        //         stats.population,
-        //         stats.births,
-        //         stats.deaths,
-        //         stats.avg_energy,
-        //         stats.avg_age,
-        //         stats.eat_success,
-        //         stats.eat_failed,
-        //         stats.reproduce_success,
-        //         stats.reproduce_failed_age,
-        //         stats.reproduce_failed_energy
-        //     );
-        // }
+
         thread::sleep(target_tick_duration.saturating_sub(tick_duration));
+    }
+}
+
+/******************************************************************************************************************************************/
+/// processes incoming messages from the webserver to control the simulation
+#[inline(always)]
+fn process_web2sim_messages(
+    paused: &mut bool,
+    target_tick_duration: &mut Duration,
+    channel_web2sim_rx: &std::sync::mpsc::Receiver<ChannelWeb2SimMessage>,
+) {
+    while let Ok(message) = channel_web2sim_rx.try_recv() {
+        match message {
+            ChannelWeb2SimMessage::PauseSim => {
+                *paused = true;
+                println!("[SIM  ]: Simulation paused");
+            },
+            ChannelWeb2SimMessage::ResumeSim => {
+                *paused = false;
+                println!("[SIM  ]: Simulation resumed");
+            },
+            ChannelWeb2SimMessage::SetTargetTPS(tps) => {
+                *target_tick_duration = Duration::from_secs_f64(1.0 / tps);
+                println!("[SIM  ]: Target TPS set to {}", tps);
+            },
+        }
     }
 }

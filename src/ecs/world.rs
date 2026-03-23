@@ -74,7 +74,7 @@ impl World {
         let mut foodmap: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
         for i in 0..foodmap.len() {
             // foodmap[i] = if rng.gen_bool(0.30) { 255_u8 } else { 0_u8 };
-            foodmap[i] = rng.gen_range(0..=255);
+            foodmap[i] = rng.gen_range(0..=192);
         }
                 
         Self {
@@ -165,11 +165,11 @@ impl World {
         let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(160, &mut self.rng)); // we had with 384 bytes
         let new_creature_genome: Genome = Genome::from_dna(&new_creature_dna);
         let new_creature_brain: Brain = Brain::recompile(&new_creature_genome);
-        let new_size: f32 = 0.1 + (0.9 * (new_creature_dna.bytes[67] as f32 / 255.0)); // size between 0.1 and 1.0 based on a dna byte
+        let new_size: f32 = 0.1 + (0.9 * (new_creature_dna.bytes[new_creature_dna.bytes.len() - 1] as f32 / 255.0)); // size between 0.1 and 1.0 based on a dna byte
         let new_creature_color: [u8; 3] = [
-            new_creature_dna.bytes[66],
-            new_creature_dna.bytes[77],
-            new_creature_dna.bytes[88]
+            new_creature_dna.bytes[new_creature_dna.bytes.len() - 2],
+            new_creature_dna.bytes[new_creature_dna.bytes.len() - 3],
+            new_creature_dna.bytes[new_creature_dna.bytes.len() - 4]
         ];
         let new_creature_reproduce_cooldown: u64 = self.tick_counter + c::REPRODUCE_AGE_MIN - 10 + (self.rng.gen_range(0..20));
 

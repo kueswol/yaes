@@ -54,3 +54,12 @@ pub struct WorldStats {
     pub reproduce_failed_energy: u64,
     pub reproduce_failed_cooldown: u64,
 }
+
+/****************************************************************************************************************/
+/// events that can happen to a creature after thinking
+#[derive(Serialize,serde::Deserialize)]
+pub enum ChannelWeb2SimMessage {
+    PauseSim,
+    ResumeSim,
+    SetTargetTPS(f64),
+}

@@ -38,6 +38,77 @@
             font-family: monospace;
             font-size: 14px;
         }
+        #control-panel {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            width: 300px; /* Same width as overlay */
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .control-slider-container {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .control-slider-label {
+            min-width: 80px;
+            font-size: 12px;
+        }
+        .control-slider {
+            flex: 1;
+            height: 6px;
+            background: rgba(100, 100, 100, 0.8);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        .control-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: rgba(0, 150, 255, 0.9);
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid rgba(0, 200, 255, 1);
+        }
+        .control-slider::-webkit-slider-thumb:hover {
+            background: rgba(0, 180, 255, 1);
+        }
+        .control-slider-value {
+            min-width: 40px;
+            text-align: right;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .control-button {
+            padding: 8px 16px;
+            margin: 4px 4px 4px 0;
+            background: rgba(100, 100, 100, 0.8);
+            color: white;
+            border: 2px solid rgba(150, 150, 150, 0.8);
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .control-button:hover {
+            background: rgba(120, 120, 120, 0.9);
+            border-color: rgba(200, 200, 200, 0.9);
+        }
+        .control-button.active {
+            background: rgba(0, 150, 0, 0.8);
+            border-color: rgba(0, 255, 0, 1);
+            font-weight: bold;
+        }
         .stat_cell_left {
             text-align: left;
             padding-right: 10px;
@@ -80,6 +151,17 @@
             <tr><td>ID:</td>    <td><span id="detail_id">    </span></td></tr>
             <tr><td>Energy:</td><td><span id="detail_energy"></span></td></tr>
         </table>
+    </div>
+    <div id="control-panel">
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <button id="btn-pause" class="control-button" style="flex: 1;">Pause</button>
+            <button id="btn-resume" class="control-button active" style="flex: 1;">Resume</button>
+        </div>
+        <div class="control-slider-container">
+            <span class="control-slider-label">Target TPS:</span>
+            <input type="range" id="tps-slider" class="control-slider" min="1" max="100" step="1" value="25">
+            <span id="tps-value" class="control-slider-value">25</span>
+        </div>
     </div>
     <script>
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -544,7 +626,8 @@
                     const id = view.getUint32(i, true); // Little-endian
                     const x = view.getFloat32(i + 4, true) * SCALE;
                     const y = view.getFloat32(i + 8, true) * SCALE;
-                    const size = Math.max(view.getFloat32(i + 12, true), 0.5);
+                    // const size = Math.max(view.getFloat32(i + 12, true), 0.2) * SCALE;
+                    const size = view.getFloat32(i + 12, true) * SCALE;
                     const r = payload[i + 16] / 255.0;
                     const g = payload[i + 17] / 255.0;
                     const b = payload[i + 18] / 255.0;
@@ -703,6 +786,65 @@
             document.getElementById("stat_reproduce_failed_cooldown").textContent = data.reproduce_failed_cooldown.toLocaleString();
         }
         interval_updateWorld   = setInterval(updateWorldStats, 2000);
+
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // Control Panel
+        ///////////////////////////////////////////////////////////////////////////////////////
+        let simulationPaused = true;
+        let targetTPS = 25;
+
+        const btnPause = document.getElementById("btn-pause");
+        const btnResume = document.getElementById("btn-resume");
+        const tpsSlider = document.getElementById("tps-slider");
+        const tpsValue = document.getElementById("tps-value");
+
+        function updateTPSDisplay() {
+            tpsValue.textContent = targetTPS;
+        }
+
+        function updateButtonStates() {
+            if (simulationPaused) {
+                btnPause.classList.add("active");
+                btnResume.classList.remove("active");
+            } else {
+                btnPause.classList.remove("active");
+                btnResume.classList.add("active");
+            }
+        }
+
+        btnPause.onclick = () => {
+            if (!simulationPaused) {
+                simulationPaused = true;
+                socket.send(JSON.stringify("PauseSim"));
+                updateButtonStates();
+                console.log("Pause command sent");
+            }
+        };
+
+        btnResume.onclick = () => {
+            if (simulationPaused) {
+                simulationPaused = false;
+                socket.send(JSON.stringify("ResumeSim"));
+                updateButtonStates();
+                console.log("Resume command sent");
+            }
+        };
+
+        tpsSlider.oninput = (e) => {
+            const newTPS = parseInt(e.target.value);
+            tpsValue.textContent = newTPS;
+        };
+
+        tpsSlider.onchange = (e) => {
+            targetTPS = parseInt(e.target.value);
+            socket.send(JSON.stringify({"SetTargetTPS": targetTPS}));
+            console.log("Target TPS set to:", targetTPS);
+        };
+
+        // Initialize
+        tpsSlider.value = targetTPS;
+        updateTPSDisplay();
+        updateButtonStates();
 
     </script>
 

@@ -14,8 +14,8 @@ pub const WORLD_WIDTH                   : u32   = 200;
 pub const WORLD_HEIGHT                  : u32   = 200;
 pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   = 5;   // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT
 
-pub const FOOD_REGROWTH_TICKS           : u64   =  7;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
-pub const FOOD_REGROWTH_AMOUNT          : u8    = 15;  // primefactors of 255 would be 3, 5, 17   
+pub const FOOD_REGROWTH_TICKS           : u64   = 31;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
+pub const FOOD_REGROWTH_AMOUNT          : u8    =  5;  // primefactors of 255 would be 3, 5, 17   
 
 /// ---------------------------------------------------------------------------------------------------------
 /// CREATURE
@@ -28,8 +28,8 @@ pub const OUTPUT_FIRED_NEURONS_MASK        : u64   = 0b00000000_00000000_1111111
 
 pub const ENERGY_COST_EAT                  : f32   = -15.0;
 pub const ENERGY_COST_SLEEP                : f32   =  -1.0;
-pub const ENERGY_COST_REPRODUCE            : f32   =  38.0; // with 33 we get a blob only spawning
-pub const ENERGY_COST_MOVE                 : f32   =   0.025;
+pub const ENERGY_COST_REPRODUCE            : f32   =  44.0; // with 33 we get a blob only spawning
+pub const ENERGY_COST_MOVE                 : f32   =   0.050;
 pub const ENERGY_COST_MOVE_SPRINT          : f32   =   0.075;
 pub const ENERGY_COST_FIRED_NEURON         : f32   =   0.005;
 pub const ENERGY_COST_IDLE                 : f32   =  10.0;
