@@ -609,7 +609,9 @@
         // Websocket
         ///////////////////////////////////////////////////////////////////////////////////////
 
-        const socket = new WebSocket("ws://" + location.host + "/ws");
+        const host = location.host;
+        const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const socket = new WebSocket(`${proto}//${host}/ws`);
         socket.binaryType = "arraybuffer";
         socket.onmessage = (event) => {
             const bytes = new Uint8Array(event.data);
