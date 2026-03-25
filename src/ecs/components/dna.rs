@@ -22,20 +22,16 @@ impl Dna {
     pub fn random(length: usize, rng: &mut impl Rng) -> Self {
         let mut bytes = Vec::new();
 
-    //    // we added chunks of 8 bytes to encode some output genes which trigger actions
-    //    // as a scaffold for the evolution to find useful actions more easily, but this is optional and can be removed for a more free-form evolution
-    //    for target_bit in 0..4 {
-    //        bytes.extend_from_slice(&[
-    //            rng.gen_range(0..=0xFF),  // mask byte 0
-    //            rng.gen_range(0..=0xFF),  // mask byte 1
-    //            rng.gen_range(0..=0xFF),  // mask byte 2
-    //            rng.gen_range(0..=0xFF),  // mask byte 3
-    //            rng.gen_range(0..=0xFF),  // mask byte 4
-    //            4,                        // kind "Output"
-    //            rng.gen_range(5..=12),    // threshold
-    //            target_bit as u8,         // target_bit (used in `(chunk[7] % 32) + 1)`)
-    //        ]);
-    //    }
+    
+        // byte structure for a single neuron (8 bytes):
+        // byte 1: mask for input bits 1-8
+        // byte 2: mask for input bits 9-16
+        // byte 3: mask for input bits 17-24
+        // byte 4: mask for input bits 25-32
+        // byte 5: mask for input bits 33-40
+        // byte 6: kind "Output"
+        // byte 7: threshold
+        // byte 8: target_bit (used in `(chunk[7] % 32) + 1)`)
         
         let type_hi1: u8 = 0;
         // let type_hi2: u8 = 2;

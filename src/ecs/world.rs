@@ -12,8 +12,8 @@ use rayon::prelude::*;
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 pub struct World {
-    // the world wide root of all "randomness"
-    rng: rand::rngs::StdRng,
+    params: SimParams,
+    rng: rand::rngs::StdRng,        // the world wide root of all "randomness"
     spatial_map: SpatialHashmap,
     pub foodmap: Vec<u8>,
 
@@ -78,6 +78,23 @@ impl World {
         }
                 
         Self {
+            params: SimParams {
+                target_tps: 25.0,
+                paused: false,
+                world: SimParamWorld {
+                    max_population: c::MAX_POPULATION,
+                    food_regrowth_amount: c::FOOD_REGROWTH_AMOUNT,
+                    food_regrowth_ticks: c::FOOD_REGROWTH_TICKS,
+                },
+                energy: SimParamEnergy {
+                    cost_eat: c::ENERGY_COST_EAT,
+                    cost_sleep: c::ENERGY_COST_SLEEP,
+                    cost_reproduce: c::ENERGY_COST_REPRODUCE,
+                    cost_move_slow: c::ENERGY_COST_MOVE_SLOWLY,
+                    cost_move_norm: c::ENERGY_COST_MOVE_NORMAL,
+                    cost_move_fast: c::ENERGY_COST_MOVE_SPRINT,
+                },
+            },
             rng,
             foodmap,
             tick_counter: 0,
@@ -146,7 +163,7 @@ impl World {
     /// spawn a new creature
     pub fn spawn_creature(&mut self, dna: Option<Dna>, position: Option<Coordinate>) -> bool {
         // abort here, if we don't have capacity for more creatures
-        if self.next_creature_id >= c::MAX_POPULATION {
+        if self.next_creature_id >= self.params.world.max_population {
             return false;
         }
         self.next_creature_id += 1;
@@ -212,8 +229,8 @@ impl World {
 
     /******************************************************************************************************************************************/
     pub fn spawn_random_creatures(&mut self, mut count: usize) {
-        if count + self.creatures.len() > c::MAX_POPULATION {
-            count = c::MAX_POPULATION - self.creatures.len();
+        if count + self.creatures.len() > self.params.world.max_population {
+            count = self.params.world.max_population - self.creatures.len();
         }
         if count < 1 {
             return;
@@ -297,6 +314,18 @@ impl World {
              id: id,
              energy: self.energies[id],
         }
+    }
+
+    /******************************************************************************************************************************************/
+    /// apply new settings to the world
+    pub fn set_sim_params(&mut self, params: SimParams) {
+        self.params = params;
+    }
+
+    /******************************************************************************************************************************************/
+    /// get current settings of the world
+    pub fn get_sim_params(&self) -> SimParams {
+        self.params
     }
 
 }
@@ -517,7 +546,7 @@ impl World {
     /// schedule the creatures' actions based on their brain outputs
     fn handle_action_eat(&mut self) {
         let pending_eat =
-            std::mem::replace(&mut self.pending_eat, Vec::with_capacity(c::MAX_POPULATION));
+            std::mem::replace(&mut self.pending_eat, Vec::with_capacity(self.params.world.max_population));
         for (entity_id, _action) in pending_eat {
             let pos = &self.positions[entity_id];
             let (has_food, index) = self.has_food(pos);
@@ -552,7 +581,7 @@ impl World {
                     if *sprint { factor = 1.5; }
 
                     self.pending_energy_costs
-                        .push((*entity_id, c::ENERGY_COST_MOVE * factor));
+                        .push((*entity_id, c::ENERGY_COST_MOVE_NORMAL * factor));
                 }
                 _ => {}
             }
@@ -574,12 +603,12 @@ impl World {
     fn handle_action_reproduce(&mut self) {
         let mut reproductions = std::mem::replace(
             &mut self.pending_reproduce,
-            Vec::with_capacity(c::MAX_POPULATION),
+            Vec::with_capacity(self.params.world.max_population),
         );
 
-        if self.creatures.len() + reproductions.len() > c::MAX_POPULATION {
+        if self.creatures.len() + reproductions.len() > self.params.world.max_population {
             // if we have more reproductions than capacity, we randomly select which ones will reproduce
-            let overpopulation = (self.creatures.len() + reproductions.len()) - c::MAX_POPULATION;
+            let overpopulation = (self.creatures.len() + reproductions.len()) - self.params.world.max_population;
             for _ in 0..overpopulation {
                 reproductions.swap_remove(self.rng.gen_range(0..reproductions.len()));
             }
@@ -625,7 +654,7 @@ impl World {
     fn handle_energy_costs(&mut self) {
         let mut pending_energy_costs = std::mem::replace(
             &mut self.pending_energy_costs,
-            Vec::with_capacity(c::MAX_POPULATION * 2),
+            Vec::with_capacity(self.params.world.max_population * 2),
         );
         pending_energy_costs.sort_unstable_by_key(|&(id, _)| id);
 
@@ -680,7 +709,7 @@ impl World {
     fn handle_deaths(&mut self) {
         let mut deaths = std::mem::replace(
             &mut self.pending_deaths,
-            Vec::with_capacity(c::MAX_POPULATION),
+            Vec::with_capacity(self.params.world.max_population),
         );
         deaths.sort_unstable_by(|a, b| b.cmp(a));
         deaths.dedup();
@@ -762,13 +791,13 @@ impl World {
 
         // spread to neighbors if the cell is full, otherwise regrow in the cell
         if foodmap[index] == 255 {
-            foodmap[left]  = foodmap[left] .saturating_add(c::FOOD_REGROWTH_AMOUNT);
-            foodmap[right] = foodmap[right].saturating_add(c::FOOD_REGROWTH_AMOUNT);
-            foodmap[up]    = foodmap[up]   .saturating_add(c::FOOD_REGROWTH_AMOUNT);   
-            foodmap[down]  = foodmap[down] .saturating_add(c::FOOD_REGROWTH_AMOUNT);
+            foodmap[left]  = foodmap[left] .saturating_add(self.params.world.food_regrowth_amount);
+            foodmap[right] = foodmap[right].saturating_add(self.params.world.food_regrowth_amount);
+            foodmap[up]    = foodmap[up]   .saturating_add(self.params.world.food_regrowth_amount);   
+            foodmap[down]  = foodmap[down] .saturating_add(self.params.world.food_regrowth_amount);
         }
         else if foodmap[index] > 0 {
-            foodmap[index] = foodmap[index].saturating_add(c::FOOD_REGROWTH_AMOUNT);
+            foodmap[index] = foodmap[index].saturating_add(self.params.world.food_regrowth_amount);
         }
     }
     /******************************************************************************************************************************************/
