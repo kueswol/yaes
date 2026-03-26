@@ -72,15 +72,12 @@ impl World {
         let mut rng = StdRng::seed_from_u64(rng_seed);
 
         let mut foodmap: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
-        for i in 0..foodmap.len() {
-            // foodmap[i] = if rng.gen_bool(0.30) { 255_u8 } else { 0_u8 };
-            foodmap[i] = rng.gen_range(0..=192);
-        }
+        Self::create_foodmap(&mut foodmap, &mut rng);
                 
         Self {
             params: SimParams {
                 target_tps: 25.0,
-                paused: false,
+                paused: true,
                 world: SimParamWorld {
                     max_population: c::MAX_POPULATION,
                     food_regrowth_amount: c::FOOD_REGROWTH_AMOUNT,
@@ -137,6 +134,10 @@ impl World {
     /// let the world tick
     pub fn tick(&mut self) {
         
+        if self.creatures.len() <= 10 {
+            self.spawn_creature(None, Some(Coordinate { x: c::WORLD_WIDTH as f32 / 2.0, y: c::WORLD_HEIGHT as f32 / 2.0 }));
+        }
+
         self.update_brain_inputs();
         self.update_brain_outputs();
         self.handle_turning();
@@ -182,11 +183,11 @@ impl World {
         let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(160, &mut self.rng)); // we had with 384 bytes
         let new_creature_genome: Genome = Genome::from_dna(&new_creature_dna);
         let new_creature_brain: Brain = Brain::recompile(&new_creature_genome);
-        let new_size: f32 = 0.1 + (0.9 * (new_creature_dna.bytes[new_creature_dna.bytes.len() - 1] as f32 / 255.0)); // size between 0.1 and 1.0 based on a dna byte
+        let new_size: f32 = 0.1 + (0.9 * (new_creature_dna.bytes[0] as f32 / 255.0)); // size between 0.1 and 1.0 based on a dna byte
         let new_creature_color: [u8; 3] = [
-            new_creature_dna.bytes[new_creature_dna.bytes.len() - 2],
-            new_creature_dna.bytes[new_creature_dna.bytes.len() - 3],
-            new_creature_dna.bytes[new_creature_dna.bytes.len() - 4]
+            new_creature_dna.bytes[1],
+            new_creature_dna.bytes[2],
+            new_creature_dna.bytes[3]
         ];
         let new_creature_reproduce_cooldown: u64 = self.tick_counter + c::REPRODUCE_AGE_MIN - 10 + (self.rng.gen_range(0..20));
 
@@ -343,8 +344,8 @@ impl World {
     ///   [10] LastAction Idle,         [11] LastAction Sleep,        [12] LastAction Move,
     ///   [13] LastAction Eat,          [14] LastAction Reproduce,    [15] can_reproduce,
     ///   [16] age low,                 [17] age mid,                 [18] age high,
-    ///   [19] can_eat,                 [20] border_ahead,            [21] unused,
-    ///   [22] unused,                  [23] unused,                  [24] unused
+    ///   [19] can_eat,                 [20] border_ahead,            [21] more_food_ahead_left,
+    ///   [22] more_food_ahead_right,   [23] unused,                  [24] unused
     fn update_brain_inputs(&mut self) {
         // for each creature, gather sensory data and update brain_inputs
         let energies = &self.energies;
@@ -407,12 +408,15 @@ impl World {
                 
                 // are we facing the border;
                 *input |= (Self::check_border_ahead(pos, orientations[entity_id]) as u64) << 19;
+
+                // fodd ahead! we can check the 3 tiles ahead in a cone, and encode that information in 2 bits for more_food_ahead_left and more_food_ahead_right
+                let (food_ahead_left, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], foodmap);
+                *input |= (food_ahead_left  as u64) << 20; // more_food_ahead_left
+                *input |= (food_ahead_right as u64) << 21; // more_food_ahead_right
         });
 
-        // *inputs |= something else << 20;
-        // *inputs |= something else << 21;
-        // *inputs |= something else << 22;
-        // *inputs |= something else << 23;
+        // *input |= something else << 22;
+        // *input |= something else << 23;
     }
 
     /******************************************************************************************************************************************/
@@ -549,12 +553,13 @@ impl World {
             std::mem::replace(&mut self.pending_eat, Vec::with_capacity(self.params.world.max_population));
         for (entity_id, _action) in pending_eat {
             let pos = &self.positions[entity_id];
-            let (has_food, index) = self.has_food(pos);
+            let (has_food, index, food_amount) = Self::has_food(&self.foodmap, pos);
             if has_food {
+                let food_eaten = (self.params.energy.cost_eat.abs() as u8).min(food_amount); // we can only eat as much food as there is, and we want to eat at most the absolute value of the energy cost
                 let old_value = self.foodmap[index];
-                let new_value = old_value.saturating_sub(c::ENERGY_COST_EAT.abs() as u8); // we subtract the absolute value
+                let new_value = old_value.saturating_sub(food_eaten);
                 self.foodmap[index] = new_value;
-                self.pending_energy_costs.push((entity_id, c::ENERGY_COST_EAT)); // negative cost = energy gain
+                self.pending_energy_costs.push((entity_id, (-1.0 * food_eaten as f32))); // negative cost => energy gain
                 self.eat_success += 1;
                 return;
             }
@@ -784,17 +789,17 @@ impl World {
         let x = self.rng.gen_range(1..(c::WORLD_WIDTH - 1));
         let y = self.rng.gen_range(1..(c::WORLD_HEIGHT - 1));
         let index: usize = (y * c::WORLD_WIDTH + x) as usize;
-        let left : usize = index - 1;
-        let right: usize = index + 1;
-        let up   : usize = index - (c::WORLD_WIDTH as usize);
-        let down : usize = index + (c::WORLD_WIDTH as usize);
+        let left : usize = (index - 1).max(0);
+        let right: usize = (index + 1).min(foodmap.len() - 1);
+        let up   : usize = (index - (c::WORLD_WIDTH as usize)).max(0);
+        let down : usize = (index + (c::WORLD_WIDTH as usize)).min(foodmap.len() - 1);
 
         // spread to neighbors if the cell is full, otherwise regrow in the cell
         if foodmap[index] == 255 {
-            foodmap[left]  = foodmap[left] .saturating_add(self.params.world.food_regrowth_amount);
-            foodmap[right] = foodmap[right].saturating_add(self.params.world.food_regrowth_amount);
-            foodmap[up]    = foodmap[up]   .saturating_add(self.params.world.food_regrowth_amount);   
-            foodmap[down]  = foodmap[down] .saturating_add(self.params.world.food_regrowth_amount);
+            foodmap[left]  = foodmap[left] .saturating_add(self.params.world.food_regrowth_amount / 4);
+            foodmap[right] = foodmap[right].saturating_add(self.params.world.food_regrowth_amount / 4);
+            foodmap[up]    = foodmap[up]   .saturating_add(self.params.world.food_regrowth_amount / 4);   
+            foodmap[down]  = foodmap[down] .saturating_add(self.params.world.food_regrowth_amount / 4);
         }
         else if foodmap[index] > 0 {
             foodmap[index] = foodmap[index].saturating_add(self.params.world.food_regrowth_amount);
@@ -864,11 +869,11 @@ impl World {
     /// checks if there's food at the current position
     #[inline(always)]
     #[allow(dead_code)]
-    fn has_food(&self, pos: &Coordinate) -> (bool, usize) {
+    fn has_food(foodmap: &Vec<u8>, pos: &Coordinate) -> (bool, usize, u8) { // return whether there's food, the index in the foodmap and the amount of food
         let x = (pos.x as usize).clamp(0,99);
         let y = (pos.y as usize).clamp(0,99);
         let index = y * (c::WORLD_WIDTH as usize) + x;
-        (self.foodmap[index] as f32 + c::ENERGY_COST_EAT >= 0.0, index)
+        (foodmap[index] as f32 + c::ENERGY_COST_EAT >= 0.0, index, foodmap[index])
     }
 
     /******************************************************************************************************************************************/
@@ -878,6 +883,59 @@ impl World {
         let look_ahead_x = pos.x + orientation.cos() * c::CREATURE_SPEED_SPRINT * 1.1; // 10% over the distance reachable with sprint
         let look_ahead_y = pos.y + orientation.sin() * c::CREATURE_SPEED_SPRINT * 1.1;
         look_ahead_x < 0.0 || look_ahead_x >= c::WORLD_WIDTH as f32 || look_ahead_y < 0.0 || look_ahead_y >= c::WORLD_HEIGHT as f32
+    }
+
+    /******************************************************************************************************************************************/
+    /// check whether there's food ahead in the current direction
+    #[inline(always)]
+    fn check_food_ahead(pos: &Coordinate, orientation: f32, foodmap: &Vec<u8>) -> (bool, bool) {
+        let look_ahead_distance = c::CREATURE_SPEED_SPRINT * 1.1; // 10% over the distance reachable with sprint
+        // let look_ahead_x = pos.x + orientation.cos() * look_ahead_distance;
+        // let look_ahead_y = pos.y + orientation.sin() * look_ahead_distance;
+
+        let left_cone_angle  = orientation + std::f32::consts::FRAC_PI_4; // 45 degrees to the left
+        let right_cone_angle = orientation - std::f32::consts::FRAC_PI_4; // 45 degrees to the right
+
+        let left_cone_x  = pos.x + left_cone_angle.cos() * look_ahead_distance;
+        let left_cone_y  = pos.y + left_cone_angle.sin() * look_ahead_distance;
+        let right_cone_x = pos.x + right_cone_angle.cos() * look_ahead_distance;
+        let right_cone_y = pos.y + right_cone_angle.sin() * look_ahead_distance;
+
+        let left_food  = Self::has_food(foodmap, &Coordinate { x: left_cone_x, y: left_cone_y }).0;
+        let right_food = Self::has_food(foodmap, &Coordinate { x: right_cone_x, y: right_cone_y }).0;
+
+        (left_food, right_food)
+    }
+
+    /******************************************************************************************************************************************/
+    /// check whether there's a border ahead in the current direction
+    #[inline(always)]
+    fn create_foodmap(foodmap: &mut Vec<u8>, rng: &mut StdRng) {
+        let mut hotspots: Vec<(Coordinate, f32)> = Vec::new();
+        for _ in 0..10 {
+            hotspots.push((Coordinate {
+                x: rng.gen_range(25.0..((c::WORLD_WIDTH  - 25) as f32)),
+                y: rng.gen_range(25.0..((c::WORLD_HEIGHT - 25) as f32)),
+            }, rng.gen_range(50.0..250.0)));
+        }
+        
+        for x in 0..c::WORLD_WIDTH {
+            for y in 0..c::WORLD_HEIGHT {
+                let mut value: u8 = 0;
+                for (hotspot_pos, hotspot_strength) in &hotspots {
+                    let dx = x as f32 - hotspot_pos.x;
+                    let dy = y as f32 - hotspot_pos.y;
+                    let distance_sqr = dx * dx + dy * dy + 1.0; // add 1 to prevent division by zero
+                    value = value.saturating_add(((hotspot_strength * hotspot_strength) / distance_sqr).min(255.0) as u8);
+                }
+                let index: usize = (y as usize) * (c::WORLD_WIDTH as usize) + (x as usize);
+                foodmap[index] = value;
+            }
+        }
+
+        // for i in 0..foodmap.len() {
+        //     foodmap[i] = rng.gen_range(0..=192);
+        // }
     }
 
 }

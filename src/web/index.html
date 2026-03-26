@@ -152,7 +152,7 @@
             <tr><td>Energy:</td><td><span id="detail_energy"></span></td></tr>
         </table>
     </div>
-    <div id="control-panel">
+    <div id="control-panel" style="display: none;">
         <div style="display: flex; gap: 8px; margin-bottom: 12px;">
             <button id="btn-pause" class="control-button" style="flex: 1;">Pause</button>
             <button id="btn-resume" class="control-button active" style="flex: 1;">Resume</button>
@@ -819,6 +819,11 @@
         tpsSlider.value = targetTPS;
         updateTPSDisplay();
         updateButtonStates();
+
+        // Check for #admin in URL to show control panel
+        if (window.location.hash === '#admin') {
+            document.getElementById('control-panel').style.display = 'block';
+        }
 
     </script>
 

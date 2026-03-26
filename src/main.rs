@@ -49,7 +49,7 @@ fn initialize_world() -> World {
     let mut world = World::default();
 
     println!("[MAIN ]: initializing world");
-    world.spawn_random_creatures(5000);
+    world.spawn_random_creatures(50);
 
     world
 }
