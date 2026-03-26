@@ -42,7 +42,7 @@
             position: absolute;
             bottom: 10px;
             left: 10px;
-            width: 300px; /* Same width as overlay */
+            width: 300px;
             color: white;
             background: rgba(0, 0, 0, 0.6);
             padding: 12px;
@@ -152,7 +152,7 @@
             <tr><td>Energy:</td><td><span id="detail_energy"></span></td></tr>
         </table>
     </div>
-    <div id="control-panel">
+    <div id="control-panel" style="display: none;">
         <div style="display: flex; gap: 8px; margin-bottom: 12px;">
             <button id="btn-pause" class="control-button" style="flex: 1;">Pause</button>
             <button id="btn-resume" class="control-button active" style="flex: 1;">Resume</button>
@@ -219,7 +219,6 @@
             gl.uniform2f(gl.getUniformLocation(program, "worldSize"), worldWidth, worldHeight);
         }
         function render() {
-            // gl.clearColor(0.5, 0.5, 0.5, 1.0);
             gl.clearColor(0.16, 0.23, 0.23, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -489,9 +488,9 @@
         // Vertex 2: bottom-left (rear-left)
         // Vertex 3: bottom-right (rear-right)
         const triangleVertices = new Float32Array([
-            0.0,  1.0,   // Spitze vorne
-            -0.5, -1.0,  // hinten links
-            0.5, -1.0    // hinten rechts
+            0.0,  1.0,   // front
+            -0.5, -1.0,  // back left
+            0.5, -1.0    // back right
         ]);
         const triangleBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, triangleBuffer);
@@ -524,8 +523,7 @@
         // camera zooming/panning
         cameraX = worldWidth / 2;
         cameraY = worldHeight / 2;
-        // zoom = Math.min(canvas.width, canvas.height) / worldWidth;
-        zoom = 0.99;
+        zoom = 1.0;
         const cameraLocation = gl.getUniformLocation(creatureProgram, "camera");
         const zoomLocation = gl.getUniformLocation(creatureProgram, "zoom");
         const worldSizeLocation = gl.getUniformLocation(creatureProgram, "worldSize");
@@ -542,7 +540,7 @@
         };
         canvas.onmouseup = (e) => {
             if (!dragging && mouseDown) {
-                // Handle click (nur wenn nicht gedraggt)
+                // Handle click (only if not dragging)
                 const rect = canvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
@@ -579,15 +577,10 @@
             const zoomFactor = 1.1;
             const mouseWorldX = cameraX + (e.offsetX / canvas.width - 0.5) * worldWidth / zoom;
             const mouseWorldY = cameraY - (e.offsetY / canvas.height - 0.5) * worldHeight / zoom;
-            // if (e.deltaY < 0) 
-            //     zoom *= Math.pow(zoomFactor, -e.deltaY * 0.01);
-            // else
-            //     zoom /= Math.pow(zoomFactor, -e.deltaY * 0.01);
             if (e.deltaY < 0)
                 zoom *= zoomFactor;
             else
                 zoom /= zoomFactor;
-
             // clamp
             zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
             cameraX = mouseWorldX - (e.offsetX / canvas.width - 0.5) * worldWidth / zoom;
@@ -595,16 +588,6 @@
             clampCamera();
         };
 
-        // creature selection
-        // canvas.onclick = (e) => {
-        //     const rect = canvas.getBoundingClientRect();
-        //     const mouseX = e.clientX - rect.left;
-        //     const mouseY = e.clientY - rect.top;
-        //     const worldX = cameraX + (mouseX / canvas.width - 0.5) * worldWidth / zoom;
-        //     const worldY = cameraY - (mouseY / canvas.height - 0.5) * worldHeight / zoom;
-        //     console.log("Clicked at world:", worldX, worldY);
-        //     checkCreatureClick(worldX, worldY);
-        // };
         ///////////////////////////////////////////////////////////////////////////////////////
         // Websocket
         ///////////////////////////////////////////////////////////////////////////////////////
@@ -623,23 +606,19 @@
                 creatures = [];
                 // const positions = [];
                 const view = new DataView(payload.buffer, payload.byteOffset);
-                const chunkSize = 23 // 23 Bytes pro Kreatur: u32 (id) + f32 (x) + f32 (y) + f32 (size) + [u8; 3] (color) + f32 (orientation)
+                const chunkSize = 23 // 23 bytes per creature: u32 (id) + f32 (x) + f32 (y) + f32 (size) + [u8; 3] (color) + f32 (orientation)
                 for (let i = 0; i < payload.length; i += chunkSize) { 
                     const id = view.getUint32(i, true); // Little-endian
                     const x = view.getFloat32(i + 4, true) * SCALE;
                     const y = view.getFloat32(i + 8, true) * SCALE;
-                    // const size = Math.max(view.getFloat32(i + 12, true), 0.2) * SCALE;
                     const size = view.getFloat32(i + 12, true) * SCALE;
                     const r = payload[i + 16] / 255.0;
                     const g = payload[i + 17] / 255.0;
                     const b = payload[i + 18] / 255.0;
                     const orientation = view.getFloat32(i + 19, true);
                     creatures.push({ id, x, y, size, color: [r, g, b], orientation });
-                    // positions.push(x, y); // Für WebGL
                 }
 
-                // gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-                // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
                 creatureLayer.count = creatures.length;
             }
             else if (type === 2) {
@@ -755,14 +734,7 @@
                     gl.vertexAttrib1f(creatureAttrLocs.orientation, creature.orientation);
                     
                     // Draw 3 vertices per creature (one triangle)
-                    gl.drawArrays(gl.TRIANGLES, 0, 3);
-                        
-                    //     // Triangle vertices buffer
-                    //     gl.bindBuffer(gl.ARRAY_BUFFER, triangleBuffer);
-                    //     const triangleLoc = gl.getAttribLocation(this.program, "triangleVertex");
-                    //     gl.enableVertexAttribArray(triangleLoc);
-                    //     gl.vertexAttribPointer(triangleLoc, 2, gl.FLOAT, false, 0, 0);
-                    
+                    gl.drawArrays(gl.TRIANGLES, 0, 3);                    
                 }
             }
         };
@@ -847,6 +819,11 @@
         tpsSlider.value = targetTPS;
         updateTPSDisplay();
         updateButtonStates();
+
+        // Check for #admin in URL to show control panel
+        if (window.location.hash === '#admin') {
+            document.getElementById('control-panel').style.display = 'block';
+        }
 
     </script>
 

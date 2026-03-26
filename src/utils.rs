@@ -9,6 +9,34 @@ pub struct Coordinate {
 }
 
 /****************************************************************************************************************/
+#[derive(Clone, Copy, Serialize, serde::Deserialize)]
+pub struct SimParams {
+    pub world: SimParamWorld,
+    pub energy: SimParamEnergy,
+    pub target_tps: f64,
+    pub paused: bool,
+}
+
+/****************************************************************************************************************/
+#[derive(Clone, Copy, Serialize, serde::Deserialize)]
+pub struct SimParamWorld {
+    pub max_population: usize,
+    pub food_regrowth_amount: u8,
+    pub food_regrowth_ticks: u64,
+}
+
+/****************************************************************************************************************/
+#[derive(Clone, Copy, Serialize, serde::Deserialize)]
+pub struct SimParamEnergy {
+    pub cost_eat: f32,
+    pub cost_sleep: f32,
+    pub cost_reproduce: f32,
+    pub cost_move_slow: f32,
+    pub cost_move_norm: f32,
+    pub cost_move_fast: f32,
+}
+
+/****************************************************************************************************************/
 /// actions a creature can take
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -62,4 +90,5 @@ pub enum ChannelWeb2SimMessage {
     PauseSim,
     ResumeSim,
     SetTargetTPS(f64),
+    UpdateSimParams(SimParams),
 }

@@ -10,7 +10,6 @@ use crate::utils::ChannelWeb2SimMessage;
 use rayon::ThreadPoolBuilder;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 /// -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 /// MAIN
@@ -50,7 +49,7 @@ fn initialize_world() -> World {
     let mut world = World::default();
 
     println!("[MAIN ]: initializing world");
-    world.spawn_random_creatures(5000);
+    world.spawn_random_creatures(50);
 
     world
 }
@@ -67,27 +66,4 @@ fn start_simulation(world: Arc<Mutex<World>>, channel_web2sim_rx: std::sync::mps
 /// Starts the simulation in a separate thread.
 async fn start_webserver(world: Arc<Mutex<World>>, channel_web2sim_tx: std::sync::mpsc::Sender<ChannelWeb2SimMessage>) {
     main_webserver::start_webserver(world, channel_web2sim_tx).await;
-}
-
-/******************************************************************************************************************************************/
-/// Keeps the main thread alive indefinitely.
-#[allow(dead_code)]
-fn wait_forever() {
-    loop {
-        thread::sleep(Duration::from_secs(1));
-    }
-}
-
-#[test]
-fn test() {
-    let cost: f32 = -15.0;
-    let cost_u8: u8 = cost.abs() as u8;
-    let old_value: u8 = 100;
-    let new_value: u8 = old_value.saturating_sub(cost.abs() as u8);
-    println!("=== TESTING ===\n");
-    println!("cost      : {}", cost);
-    println!("cost_u8   : {}", cost_u8);
-    println!("old_value : {}", old_value);
-    println!("new_value : {}", new_value);
-    println!("\n===============");
 }

@@ -22,20 +22,21 @@ impl Dna {
     pub fn random(length: usize, rng: &mut impl Rng) -> Self {
         let mut bytes = Vec::new();
 
-    //    // we added chunks of 8 bytes to encode some output genes which trigger actions
-    //    // as a scaffold for the evolution to find useful actions more easily, but this is optional and can be removed for a more free-form evolution
-    //    for target_bit in 0..4 {
-    //        bytes.extend_from_slice(&[
-    //            rng.gen_range(0..=0xFF),  // mask byte 0
-    //            rng.gen_range(0..=0xFF),  // mask byte 1
-    //            rng.gen_range(0..=0xFF),  // mask byte 2
-    //            rng.gen_range(0..=0xFF),  // mask byte 3
-    //            rng.gen_range(0..=0xFF),  // mask byte 4
-    //            4,                        // kind "Output"
-    //            rng.gen_range(5..=12),    // threshold
-    //            target_bit as u8,         // target_bit (used in `(chunk[7] % 32) + 1)`)
-    //        ]);
-    //    }
+        // first chunk of 8 bytes is reserved for looks
+        let mut random_bytes = vec![0u8; 8];
+        rng.fill(&mut random_bytes[..]);
+        bytes.extend_from_slice(&random_bytes);
+
+        // next 8 * 8 bytes are scaffolding
+        //   byte structure for a single neuron (8 bytes):
+        //   byte 1: mask for input bits 1-8
+        //   byte 2: mask for input bits 9-16
+        //   byte 3: mask for input bits 17-24
+        //   byte 4: mask for input bits 25-32
+        //   byte 5: mask for input bits 33-40
+        //   byte 6: kind "Output"
+        //   byte 7: threshold
+        //   byte 8: target_bit (used in `(chunk[7] % 32) + 1)`)
         
         let type_hi1: u8 = 0;
         // let type_hi2: u8 = 2;
@@ -64,10 +65,10 @@ impl Dna {
                                   rng.gen_range(0..=0xFF), rng.gen_range(0..=0xFF),
                                   type_out, rng.gen_range(4..=10), rng.gen_range(8_u8..=9_u8)]); // target_bit 9 oder 10
         
-        // we'll use 64 bytes for the scaffold genes, so we need to subtract that from the random part of the DNA
+        // we'll use 72 bytes for looks & scaffold genes, so we need to subtract that from the random part of the DNA
         // a length of 64 bytes (=8 Neurons) is assumed as the bare minimum - therefor we make sure, we're having at least 128 bytes
-        let mut len: usize = 128 - 64;
-        if length > len { len = length - 64; }
+        let mut len: usize = 128 - 72;
+        if length > len { len = length - 72; }
         
         let mut random_bytes = vec![0u8; len];
         rng.fill(&mut random_bytes[..]);
@@ -87,22 +88,22 @@ impl Dna {
         //     }
         // }
 
-        for chunk in &mut self.bytes.chunks_exact_mut(8).skip(8) {
-            // chunks 0-4 are used for the mask
+        for chunk in &mut self.bytes.chunks_exact_mut(8).skip(8 + 1) { // the first chunk (8 bytes) is reserved for looks, the next 8 bytes are for the scaffold neurons - we don't want to mutate those
+            // bytes 0-4 are used for the mask
             if rng.gen_bool(c::MUTATE_CHANCE_BIT_FLIP_MASK) {
                 let byte_index = rng.gen_range(0..=4);
                 let bit = 1 << rng.gen_range(0..8);
                 chunk[byte_index] ^= bit;
             }
-            // chunk 5 is the type - we don't touch it for now
+            // byte 5 is the type - we don't touch it for now
 
-            // chunk 6 is the threshold - we can mutate it a bit by raiing or lowering it by 1
+            // byte 6 is the threshold - we can mutate it a bit by raiing or lowering it by 1
             if rng.gen_bool(c::MUTATE_CHANCE_CHANGE_THRESHOLD) {
                 if rng.gen_bool(0.5) { chunk[6] = chunk[6].saturating_add(1); }
                 else                 { chunk[6] = chunk[6].saturating_sub(1); }
             }
             
-            // chunk 7 (last one) is the target bit
+            // byte 7 (last one) is the target bit
             if rng.gen_bool(c::MUTATE_CHANCE_CHANGE_TARGET_BIT) {
                 if rng.gen_bool(0.5) { chunk[7] = chunk[7].saturating_add(1); }
                 else                 { chunk[7] = chunk[7].saturating_sub(1); }

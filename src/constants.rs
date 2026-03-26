@@ -28,8 +28,9 @@ pub const OUTPUT_FIRED_NEURONS_MASK        : u64   = 0b00000000_00000000_1111111
 
 pub const ENERGY_COST_EAT                  : f32   = -15.0;
 pub const ENERGY_COST_SLEEP                : f32   =  -1.0;
-pub const ENERGY_COST_REPRODUCE            : f32   =  44.0; // with 33 we get a blob only spawning
-pub const ENERGY_COST_MOVE                 : f32   =   0.050;
+pub const ENERGY_COST_REPRODUCE            : f32   =  46.0; // with 33 we get a blob only spawning
+pub const ENERGY_COST_MOVE_SLOWLY          : f32   =   0.025;
+pub const ENERGY_COST_MOVE_NORMAL          : f32   =   0.050;
 pub const ENERGY_COST_MOVE_SPRINT          : f32   =   0.075;
 pub const ENERGY_COST_FIRED_NEURON         : f32   =   0.005;
 pub const ENERGY_COST_IDLE                 : f32   =  10.0;
@@ -96,11 +97,11 @@ pub const BRAIN_OUTPUT_VALUE1_MOVE_SLOW    : u8    = 0b1000_0000;
 /// MUTATION
 /// ---------------------------------------------------------------------------------------------------------
 
-pub const MUTATE_CHANCE_BIT_FLIP_MASK      : f64   = 0.33;
-pub const MUTATE_CHANCE_CHANGE_THRESHOLD   : f64   = 0.75;
+pub const MUTATE_CHANCE_BIT_FLIP_MASK      : f64   = 0.001;
+pub const MUTATE_CHANCE_CHANGE_THRESHOLD   : f64   = 0.55;
 pub const MUTATE_CHANCE_CHANGE_TARGET_BIT  : f64   = 0.001;
-pub const MUTATE_CHANCE_GAINING_NEW_NEURON : f64   = 0.10;
-pub const MUTATE_CHANCE_LOOSING_NEW_NEURON : f64   = 0.01;
+pub const MUTATE_CHANCE_GAINING_NEW_NEURON : f64   = 0.002;
+pub const MUTATE_CHANCE_LOOSING_NEW_NEURON : f64   = 0.002;
 
 /// ---------------------------------------------------------------------------------------------------------
 /// BRAIN

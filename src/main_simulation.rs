@@ -13,21 +13,24 @@ pub fn run_simulation(
     world: Arc<Mutex<World>>,
     channel_web2sim_rx: std::sync::mpsc::Receiver<ChannelWeb2SimMessage>,
 ) {
-    let target_tps: f64 = 25.0;
-    let mut target_tick_duration: Duration = Duration::from_secs_f64(1.0 / target_tps);
+    let mut params: SimParams = {
+        let world = world.lock().unwrap();
+        world.get_sim_params()
+    };
+    
+    let mut target_tick_duration: Duration = Duration::from_secs_f64(1.0 / params.target_tps);
     let mut tick_durations: Vec<Duration> = vec![Duration::new(0, 0); 32];
     let mut stats: WorldStats;
-    let mut paused: bool = true;
 
     println!("[SIM  ]: Starting simulation loop");
     println!("[SIM  ]: - it will be paused until the webserver sends a resume command");
 
     loop {
-        process_web2sim_messages(&mut paused, &mut target_tick_duration, &channel_web2sim_rx);
+        process_web2sim_messages(&mut target_tick_duration, &mut params, &channel_web2sim_rx, &world);
 
-        while paused {
+        while params.paused {
             thread::sleep(Duration::from_millis(100));
-            process_web2sim_messages(&mut paused, &mut target_tick_duration, &channel_web2sim_rx);
+            process_web2sim_messages(&mut target_tick_duration, &mut params, &channel_web2sim_rx, &world);
         }
 
         let tick_duration_start = Instant::now();
@@ -61,23 +64,31 @@ pub fn run_simulation(
 /// processes incoming messages from the webserver to control the simulation
 #[inline(always)]
 fn process_web2sim_messages(
-    paused: &mut bool,
     target_tick_duration: &mut Duration,
+    params: &mut SimParams,
     channel_web2sim_rx: &std::sync::mpsc::Receiver<ChannelWeb2SimMessage>,
+    world: &Arc<Mutex<World>>
 ) {
     while let Ok(message) = channel_web2sim_rx.try_recv() {
         match message {
             ChannelWeb2SimMessage::PauseSim => {
-                *paused = true;
+                params.paused = true;
                 println!("[SIM  ]: Simulation paused");
             },
             ChannelWeb2SimMessage::ResumeSim => {
-                *paused = false;
+                params.paused = false;
                 println!("[SIM  ]: Simulation resumed");
             },
             ChannelWeb2SimMessage::SetTargetTPS(tps) => {
                 *target_tick_duration = Duration::from_secs_f64(1.0 / tps);
                 println!("[SIM  ]: Target TPS set to {}", tps);
+            },
+            ChannelWeb2SimMessage::UpdateSimParams(params) => {
+                {
+                    let mut world = world.lock().unwrap();
+                    world.set_sim_params(params);
+                }
+                println!("[SIM  ]: Simulation parameters updated");
             },
         }
     }
