@@ -13,6 +13,7 @@ pub struct Coordinate {
 pub struct SimParams {
     pub world: SimParamWorld,
     pub energy: SimParamEnergy,
+    pub mutation: SimParamMutation,
     pub target_tps: f64,
     pub paused: bool,
 }
@@ -37,6 +38,17 @@ pub struct SimParamEnergy {
 }
 
 /****************************************************************************************************************/
+#[derive(Clone, Copy, Serialize, serde::Deserialize)]
+pub struct SimParamMutation {
+    pub chance_bit_flip_mask      : f64,
+    pub chance_change_threshold   : f64,
+    pub chance_change_target_bit  : f64,
+    pub chance_gaining_new_neuron : f64,
+    pub chance_loosing_new_neuron : f64,
+    pub chance_mutate_looks       : f64,
+}
+
+/****************************************************************************************************************/
 /// actions a creature can take
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -58,7 +70,7 @@ impl CreatureAction {
 pub enum CreatureEvent {
     None,
     Sleep,
-    Move { sprint: bool },
+    Move { sprint: bool, creep: bool },
     Eat,
     Reproduce,
     Die,

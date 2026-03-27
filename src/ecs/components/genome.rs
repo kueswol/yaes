@@ -50,9 +50,9 @@ impl Genome {
                 2 => NeuronKind::Hidden2,
                 3 => NeuronKind::Hidden2,
                 4 => NeuronKind::Output,
-                5 => NeuronKind::Hidden2,
+                5 => NeuronKind::Output,
                 6 => NeuronKind::Hidden2,
-                7 => NeuronKind::Hidden1,
+                7 => NeuronKind::Hidden2,
                 _ => NeuronKind::Hidden1,
             };
             
@@ -65,8 +65,8 @@ impl Genome {
 
             // let target_bit = chunk[7] % 64;
             let target_bit = match kind {
-                NeuronKind::Hidden1 => chunk[7] % c::NEURON_HIDDEN2_MASK_SCOPE.count_ones() as u8,
-                NeuronKind::Hidden2 => chunk[7] % c::NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
+                NeuronKind::Hidden1 => chunk[7] % (c::NEURON_HIDDEN2_MASK_SCOPE.count_ones() + 1) as u8,
+                NeuronKind::Hidden2 => chunk[7] % (c::NEURON_OUTPUT_MASK_SCOPE.count_ones()  + 1) as u8,
                 // NeuronKind::Output  => chunk[7] % c::NEURON_OUTPUT_MASK_SCOPE.count_ones() as u8,
                 NeuronKind::Output  => chunk[7] % 32,
             };
