@@ -622,7 +622,7 @@
                 creatureLayer.count = creatures.length;
             }
             else if (type === 2) {
-                console.log("Received foodmap update");
+                console.log("Received foodmap update with payload size:", payload.length);
                 // FOODMAP
                 gl.bindTexture(gl.TEXTURE_2D, foodTexture);
                 const rgbaData = new Uint8Array(payload.length * 4);

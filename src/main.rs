@@ -48,8 +48,8 @@ fn initialize_world() -> World {
     // let world = World::new(3263687907895456594);
     let mut world = World::default();
 
-    println!("[MAIN ]: initializing world");
-    world.spawn_random_creatures(50);
+    // println!("[MAIN ]: initializing world");
+    // world.spawn_random_creatures(50);
 
     world
 }
@@ -66,4 +66,11 @@ fn start_simulation(world: Arc<Mutex<World>>, channel_web2sim_rx: std::sync::mps
 /// Starts the simulation in a separate thread.
 async fn start_webserver(world: Arc<Mutex<World>>, channel_web2sim_tx: std::sync::mpsc::Sender<ChannelWeb2SimMessage>) {
     main_webserver::start_webserver(world, channel_web2sim_tx).await;
+}
+
+#[test]
+fn test() {
+    let mut world = World::default();
+    // world.spawn_creature(None, None);
+    world.tick();
 }

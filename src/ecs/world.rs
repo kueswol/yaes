@@ -16,6 +16,7 @@ pub struct World {
     rng: rand::rngs::StdRng,        // the world wide root of all "randomness"
     spatial_map: SpatialHashmap,
     pub foodmap: Vec<u8>,
+    fertility_map: Vec<u8>,
 
     // statistics
     pub tick_counter: u64,
@@ -73,27 +74,38 @@ impl World {
 
         let mut foodmap: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
         Self::create_foodmap(&mut foodmap, &mut rng);
-                
+        
+        let fertility_map = foodmap.clone();
+
         Self {
             params: SimParams {
                 target_tps: 25.0,
                 paused: true,
                 world: SimParamWorld {
-                    max_population: c::MAX_POPULATION,
+                    max_population      : c::MAX_POPULATION,
                     food_regrowth_amount: c::FOOD_REGROWTH_AMOUNT,
-                    food_regrowth_ticks: c::FOOD_REGROWTH_TICKS,
+                    food_regrowth_ticks : c::FOOD_REGROWTH_TICKS,
                 },
                 energy: SimParamEnergy {
-                    cost_eat: c::ENERGY_COST_EAT,
-                    cost_sleep: c::ENERGY_COST_SLEEP,
+                    cost_eat      : c::ENERGY_COST_EAT,
+                    cost_sleep    : c::ENERGY_COST_SLEEP,
                     cost_reproduce: c::ENERGY_COST_REPRODUCE,
                     cost_move_slow: c::ENERGY_COST_MOVE_SLOWLY,
                     cost_move_norm: c::ENERGY_COST_MOVE_NORMAL,
                     cost_move_fast: c::ENERGY_COST_MOVE_SPRINT,
                 },
+                mutation: SimParamMutation {
+                    chance_bit_flip_mask     : c::MUTATE_CHANCE_BIT_FLIP_MASK,
+                    chance_change_threshold  : c::MUTATE_CHANCE_CHANGE_THRESHOLD,
+                    chance_change_target_bit : c::MUTATE_CHANCE_CHANGE_TARGET_BIT,
+                    chance_gaining_new_neuron: c::MUTATE_CHANCE_GAINING_NEW_NEURON,
+                    chance_loosing_new_neuron: c::MUTATE_CHANCE_LOOSING_NEW_NEURON,
+                    chance_mutate_looks      : c::MUTATE_CHANCE_MUTATE_LOOKS,
+                },
             },
             rng,
             foodmap,
+            fertility_map,
             tick_counter: 0,
             seed: rng_seed,
             deaths: 0,
@@ -125,7 +137,7 @@ impl World {
             pending_eat: Vec::with_capacity(c::MAX_POPULATION),
             pending_sleep: Vec::with_capacity(c::MAX_POPULATION),
             pending_reproduce: Vec::with_capacity(c::MAX_POPULATION),
-            pending_energy_costs: Vec::with_capacity(c::MAX_POPULATION),
+            pending_energy_costs: Vec::with_capacity(c::MAX_POPULATION * 2),
             pending_deaths: Vec::with_capacity(c::MAX_POPULATION),
         }
     }
@@ -134,8 +146,9 @@ impl World {
     /// let the world tick
     pub fn tick(&mut self) {
         
-        if self.creatures.len() <= 10 {
-            self.spawn_creature(None, Some(Coordinate { x: c::WORLD_WIDTH as f32 / 2.0, y: c::WORLD_HEIGHT as f32 / 2.0 }));
+        if self.creatures.len() <= 50 {
+            // self.spawn_creature(None, Some(Coordinate { x: c::WORLD_WIDTH as f32 / 2.0, y: c::WORLD_HEIGHT as f32 / 2.0 }));
+            self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
         }
 
         self.update_brain_inputs();
@@ -180,7 +193,7 @@ impl World {
         let new_creature_brain_input: u64 = 0;
         let new_creature_brain_output: u64 = 0;
 
-        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(160, &mut self.rng)); // we had with 384 bytes
+        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(256, &mut self.rng)); // we had with 384 bytes
         let new_creature_genome: Genome = Genome::from_dna(&new_creature_dna);
         let new_creature_brain: Brain = Brain::recompile(&new_creature_genome);
         let new_size: f32 = 0.1 + (0.9 * (new_creature_dna.bytes[0] as f32 / 255.0)); // size between 0.1 and 1.0 based on a dna byte
@@ -441,6 +454,7 @@ impl World {
     /// schedule the creatures' actions based on their brain outputs
     fn schedule_actions(&mut self) {
         let brain_outputs = &self.brain_outputs;
+        let sizes = &self.sizes;
 
         // we're collecting actions in separate buffers for each thread to avoid contention, and then we'll merge them into the main queues
         let (buffer_move, buffer_eat, buffer_sleep, buffer_reproduce, buffer_energy_costs): (
@@ -460,10 +474,16 @@ impl World {
                     
                     let (action, _value1, _value2, _value3, fired_neurons_count) = Self::decode_output(&brain_output);
                     let mut energy_cost = (fired_neurons_count as f32) * c::ENERGY_COST_FIRED_NEURON;
+
+                    // basal metabolism cost, based on size
+                    let basal_metabolism = sizes[entity_id] * 0.1;  // Anpassbar, z.B. 0.1 pro Größeneinheit
+                    energy_cost += basal_metabolism;
+
                     match action {
                         CreatureAction::Move => {
                             let sprint: bool = (_value1 & c::BRAIN_OUTPUT_VALUE1_MOVE_FAST) != 0;
-                            moves.push((entity_id, CreatureEvent::Move{ sprint }));
+                            let creep: bool = (_value1 & c::BRAIN_OUTPUT_VALUE1_MOVE_SLOW) != 0;
+                            moves.push((entity_id, CreatureEvent::Move{ sprint, creep }));
                         }
                         CreatureAction::Eat => {
                             eats.push((entity_id, CreatureEvent::Eat));
@@ -472,12 +492,7 @@ impl World {
                             sleeps.push((entity_id, CreatureEvent::Sleep));
                         }
                         CreatureAction::Reproduce => {
-                            // if self.energies[entity_id] >= c::ENERGY_COST_REPRODUCE {
-                                reproduces.push((entity_id, CreatureEvent::Reproduce));
-                            // } else {
-                                // moves.push((entity_id, CreatureEvent::Move{ sprint: false })); // if they want to reproduce but don't have enough energy, we make them move instead, to hopefully find food
-                                // energy_cost += c::ENERGY_COST_REPRODUCE; // we still apply the energy cost, even if the creature can't reproduce, to encourage them to only reproduce when they have enough energy
-                            // }
+                            reproduces.push((entity_id, CreatureEvent::Reproduce));
                         }
                         CreatureAction::Idle => {
                             energy_cost += c::ENERGY_COST_IDLE;
@@ -572,10 +587,17 @@ impl World {
     fn handle_action_move(&mut self) {
         for (entity_id, action) in &self.pending_move {
             match action {
-                CreatureEvent::Move { sprint } => {
-                    let speed = if *sprint { c::CREATURE_SPEED_SPRINT } else { c::CREATURE_SPEED };
-                    let dx = self.orientations[*entity_id].cos() * (speed / self.sizes[*entity_id]);
-                    let dy = self.orientations[*entity_id].sin() * (speed / self.sizes[*entity_id]);
+                CreatureEvent::Move { sprint, creep } => {
+                    let speed = if *sprint {
+                        c::CREATURE_SPEED_SPRINT / self.sizes[*entity_id]
+                    } else if *creep {
+                        c::CREATURE_SPEED_CREEP / self.sizes[*entity_id]
+                    } else {
+                        c::CREATURE_SPEED / self.sizes[*entity_id]
+                    };
+                    
+                    let dx = self.orientations[*entity_id].cos() * speed;
+                    let dy = self.orientations[*entity_id].sin() * speed;
 
                     self.positions[*entity_id].x =
                         (self.positions[*entity_id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
@@ -640,7 +662,7 @@ impl World {
             self.creatures[entity_id] &= !c::CREATURE_BITFLAG_CAN_REPRODUCE; // reset reproduce ability until next age check
             self.reproduce_cooldown[entity_id] = self.tick_counter + (c::REPRODUCE_AGE_MIN / 2) - 10 + (self.rng.gen_range(0..20)); // set reproduce cooldown
             
-            new_dna.mutate(&mut self.rng);
+            new_dna.mutate(&mut self.rng,&self.params.mutation);
             let new_position = Coordinate {
                 x: (self.positions[entity_id].x + self.rng.gen_range(-0.5..0.5)).clamp(0.0, c::WORLD_WIDTH as f32),
                 y: (self.positions[entity_id].y + self.rng.gen_range(-0.5..0.5)).clamp(0.0, c::WORLD_HEIGHT as f32),
@@ -785,24 +807,28 @@ impl World {
     /******************************************************************************************************************************************/
     /// let the food spread and regrow
     fn grow_food(&mut self) {
-        let foodmap = &mut self.foodmap;
         let x = self.rng.gen_range(1..(c::WORLD_WIDTH - 1));
         let y = self.rng.gen_range(1..(c::WORLD_HEIGHT - 1));
         let index: usize = (y * c::WORLD_WIDTH + x) as usize;
-        let left : usize = (index - 1).max(0);
-        let right: usize = (index + 1).min(foodmap.len() - 1);
-        let up   : usize = (index - (c::WORLD_WIDTH as usize)).max(0);
-        let down : usize = (index + (c::WORLD_WIDTH as usize)).min(foodmap.len() - 1);
+        let fertility = self.fertility_map[index];
+        if fertility == 0 { return; } // no food can grow here, so we skip
 
+        let foodmap = &mut self.foodmap;
+        
         // spread to neighbors if the cell is full, otherwise regrow in the cell
         if foodmap[index] == 255 {
+            let left : usize = (index - 1).max(0);
+            let right: usize = (index + 1).min(foodmap.len() - 1);
+            let up   : usize = (index - (c::WORLD_WIDTH as usize)).max(0);
+            let down : usize = (index + (c::WORLD_WIDTH as usize)).min(foodmap.len() - 1);
             foodmap[left]  = foodmap[left] .saturating_add(self.params.world.food_regrowth_amount / 4);
             foodmap[right] = foodmap[right].saturating_add(self.params.world.food_regrowth_amount / 4);
             foodmap[up]    = foodmap[up]   .saturating_add(self.params.world.food_regrowth_amount / 4);   
             foodmap[down]  = foodmap[down] .saturating_add(self.params.world.food_regrowth_amount / 4);
         }
-        else if foodmap[index] > 0 {
-            foodmap[index] = foodmap[index].saturating_add(self.params.world.food_regrowth_amount);
+        else {
+            let regrowth = (self.params.world.food_regrowth_amount as f32 * (fertility as f32 / 255.0)) as u8;
+            foodmap[index] = foodmap[index].saturating_add(regrowth);
         }
     }
     /******************************************************************************************************************************************/
@@ -830,7 +856,7 @@ impl World {
         let mid = ((val > buckets[0]) && (val <= buckets[1])) as u64;
         let high = (val > buckets[1]) as u64;
 
-        (low << 2) | (mid << 1) | high
+        (high << 2) | (mid << 1) | low
     }
 
     /******************************************************************************************************************************************/
@@ -870,8 +896,8 @@ impl World {
     #[inline(always)]
     #[allow(dead_code)]
     fn has_food(foodmap: &Vec<u8>, pos: &Coordinate) -> (bool, usize, u8) { // return whether there's food, the index in the foodmap and the amount of food
-        let x = (pos.x as usize).clamp(0,99);
-        let y = (pos.y as usize).clamp(0,99);
+        let x = (pos.x as usize).clamp(0,(c::WORLD_WIDTH  - 1) as usize);
+        let y = (pos.y as usize).clamp(0,(c::WORLD_HEIGHT - 1) as usize);
         let index = y * (c::WORLD_WIDTH as usize) + x;
         (foodmap[index] as f32 + c::ENERGY_COST_EAT >= 0.0, index, foodmap[index])
     }
@@ -912,11 +938,11 @@ impl World {
     #[inline(always)]
     fn create_foodmap(foodmap: &mut Vec<u8>, rng: &mut StdRng) {
         let mut hotspots: Vec<(Coordinate, f32)> = Vec::new();
-        for _ in 0..10 {
+        for _ in 0..20 {
             hotspots.push((Coordinate {
                 x: rng.gen_range(25.0..((c::WORLD_WIDTH  - 25) as f32)),
                 y: rng.gen_range(25.0..((c::WORLD_HEIGHT - 25) as f32)),
-            }, rng.gen_range(50.0..250.0)));
+            }, rng.gen_range(50.0..150.0)));
         }
         
         for x in 0..c::WORLD_WIDTH {

@@ -14,8 +14,8 @@ pub const WORLD_WIDTH                   : u32   = 200;
 pub const WORLD_HEIGHT                  : u32   = 200;
 pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   = 5;   // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT
 
-pub const FOOD_REGROWTH_TICKS           : u64   = 31;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
-pub const FOOD_REGROWTH_AMOUNT          : u8    =  5;  // primefactors of 255 would be 3, 5, 17   
+pub const FOOD_REGROWTH_TICKS           : u64   = 15;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
+pub const FOOD_REGROWTH_AMOUNT          : u8    = 15;  // primefactors of 255 would be 3, 5, 17   
 
 /// ---------------------------------------------------------------------------------------------------------
 /// CREATURE
@@ -28,7 +28,7 @@ pub const OUTPUT_FIRED_NEURONS_MASK        : u64   = 0b00000000_00000000_1111111
 
 pub const ENERGY_COST_EAT                  : f32   = -15.0;
 pub const ENERGY_COST_SLEEP                : f32   =  -1.0;
-pub const ENERGY_COST_REPRODUCE            : f32   =  46.0; // with 33 we get a blob only spawning
+pub const ENERGY_COST_REPRODUCE            : f32   =  67.0; // with 33 we get a blob only spawning
 pub const ENERGY_COST_MOVE_SLOWLY          : f32   =   0.025;
 pub const ENERGY_COST_MOVE_NORMAL          : f32   =   0.050;
 pub const ENERGY_COST_MOVE_SPRINT          : f32   =   0.075;
@@ -40,6 +40,7 @@ pub const REPRODUCE_AGE_MAX                : u64   = 5000;
 
 pub const CREATURE_SPEED                   : f32   =    0.06; // Base Speed - will be divided by size
 pub const CREATURE_SPEED_SPRINT            : f32   =    0.10; // Base Speed - will be divided by size
+pub const CREATURE_SPEED_CREEP             : f32   =    0.02; // Base Speed - will be divided by size
 pub const CREATURE_MAX_AGE                 : u64   = 5000;
 
 pub const CREATURE_BITFLAG_IS_ALIVE        : u8    = 0b0000_0001;
@@ -99,9 +100,10 @@ pub const BRAIN_OUTPUT_VALUE1_MOVE_SLOW    : u8    = 0b1000_0000;
 
 pub const MUTATE_CHANCE_BIT_FLIP_MASK      : f64   = 0.001;
 pub const MUTATE_CHANCE_CHANGE_THRESHOLD   : f64   = 0.55;
-pub const MUTATE_CHANCE_CHANGE_TARGET_BIT  : f64   = 0.001;
+pub const MUTATE_CHANCE_CHANGE_TARGET_BIT  : f64   = 0.05;
 pub const MUTATE_CHANCE_GAINING_NEW_NEURON : f64   = 0.002;
 pub const MUTATE_CHANCE_LOOSING_NEW_NEURON : f64   = 0.002;
+pub const MUTATE_CHANCE_MUTATE_LOOKS       : f64   = 0.05;
 
 /// ---------------------------------------------------------------------------------------------------------
 /// BRAIN
