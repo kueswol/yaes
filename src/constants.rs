@@ -14,8 +14,8 @@ pub const WORLD_WIDTH                   : u32   = 200;
 pub const WORLD_HEIGHT                  : u32   = 200;
 pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   = 5;   // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT
 
-pub const FOOD_REGROWTH_TICKS           : u64   = 15;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
-pub const FOOD_REGROWTH_AMOUNT          : u8    = 15;  // primefactors of 255 would be 3, 5, 17   
+pub const FOOD_REGROWTH_TICKS           : u64   = 63;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
+pub const FOOD_REGROWTH_AMOUNT          : u8    =  3;  // primefactors of 255 would be 3, 5, 17   
 
 /// ---------------------------------------------------------------------------------------------------------
 /// CREATURE
