@@ -147,8 +147,8 @@ impl World {
     pub fn tick(&mut self) {
         
         if self.creatures.len() <= 50 {
-            // self.spawn_creature(None, Some(Coordinate { x: c::WORLD_WIDTH as f32 / 2.0, y: c::WORLD_HEIGHT as f32 / 2.0 }));
-            self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
+            self.spawn_creature(None, Some(Coordinate { x: c::WORLD_WIDTH as f32 / 2.0, y: c::WORLD_HEIGHT as f32 / 2.0 }));
+            // self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
         }
 
         self.update_brain_inputs();
@@ -807,29 +807,24 @@ impl World {
     /******************************************************************************************************************************************/
     /// let the food spread and regrow
     fn grow_food(&mut self) {
-        let x = self.rng.gen_range(1..(c::WORLD_WIDTH - 1));
-        let y = self.rng.gen_range(1..(c::WORLD_HEIGHT - 1));
-        let index: usize = (y * c::WORLD_WIDTH + x) as usize;
-        let fertility = self.fertility_map[index];
-        if fertility == 0 { return; } // no food can grow here, so we skip
+        let mut new_foodmap = self.foodmap.clone();
+        let fertility_map = &self.fertility_map;
 
-        let foodmap = &mut self.foodmap;
-        
-        // spread to neighbors if the cell is full, otherwise regrow in the cell
-        if foodmap[index] == 255 {
-            let left : usize = (index - 1).max(0);
-            let right: usize = (index + 1).min(foodmap.len() - 1);
-            let up   : usize = (index - (c::WORLD_WIDTH as usize)).max(0);
-            let down : usize = (index + (c::WORLD_WIDTH as usize)).min(foodmap.len() - 1);
-            foodmap[left]  = foodmap[left] .saturating_add(self.params.world.food_regrowth_amount / 4);
-            foodmap[right] = foodmap[right].saturating_add(self.params.world.food_regrowth_amount / 4);
-            foodmap[up]    = foodmap[up]   .saturating_add(self.params.world.food_regrowth_amount / 4);   
-            foodmap[down]  = foodmap[down] .saturating_add(self.params.world.food_regrowth_amount / 4);
-        }
-        else {
-            let regrowth = (self.params.world.food_regrowth_amount as f32 * (fertility as f32 / 255.0)) as u8;
-            foodmap[index] = foodmap[index].saturating_add(regrowth);
-        }
+        new_foodmap.par_iter_mut().with_min_len(100).enumerate().for_each(|(index, cell)| {
+            let fertility = fertility_map[index];
+            if fertility == 0 { return; } // no food can grow here, so we skip
+            
+            let max_food = fertility.saturating_add(self.params.world.food_regrowth_amount * 5);
+            let regrowth = ((self.params.world.food_regrowth_amount as f32 * (fertility as f32 / 255.0)) as u8).max(1);
+            let new_val = cell.saturating_add(regrowth);
+            
+            *cell = cell.saturating_add(new_val).min(max_food);
+
+            // if rng.gen_bool(fertility as f64 / 255.0) {
+            //     *cell = cell.saturating_add(self.params.world.food_regrowth_amount);
+            // }
+        });
+        self.foodmap = new_foodmap;
     }
     /******************************************************************************************************************************************/
     /// update internal world statistics

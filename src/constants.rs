@@ -14,8 +14,8 @@ pub const WORLD_WIDTH                   : u32   = 200;
 pub const WORLD_HEIGHT                  : u32   = 200;
 pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   = 5;   // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT
 
-pub const FOOD_REGROWTH_TICKS           : u64   = 15;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
-pub const FOOD_REGROWTH_AMOUNT          : u8    = 15;  // primefactors of 255 would be 3, 5, 17   
+pub const FOOD_REGROWTH_TICKS           : u64   = 63;  // must be `(2^n) - 1`, so 3, 7, 15, 31, etc
+pub const FOOD_REGROWTH_AMOUNT          : u8    =  3;  // primefactors of 255 would be 3, 5, 17   
 
 /// ---------------------------------------------------------------------------------------------------------
 /// CREATURE
@@ -35,13 +35,13 @@ pub const ENERGY_COST_MOVE_SPRINT          : f32   =   0.075;
 pub const ENERGY_COST_FIRED_NEURON         : f32   =   0.005;
 pub const ENERGY_COST_IDLE                 : f32   =  10.0;
 
-pub const REPRODUCE_AGE_MIN                : u64   =  250;
-pub const REPRODUCE_AGE_MAX                : u64   = 5000;
+pub const REPRODUCE_AGE_MIN                : u64   =  7_500; // at 25tps that's 5 minutes of life
+pub const REPRODUCE_AGE_MAX                : u64   = 82_500; // at 25tps that's 55 minutes of life
 
 pub const CREATURE_SPEED                   : f32   =    0.06; // Base Speed - will be divided by size
 pub const CREATURE_SPEED_SPRINT            : f32   =    0.10; // Base Speed - will be divided by size
 pub const CREATURE_SPEED_CREEP             : f32   =    0.02; // Base Speed - will be divided by size
-pub const CREATURE_MAX_AGE                 : u64   = 5000;
+pub const CREATURE_MAX_AGE                 : u64   = 90_000;  // at 25tps that's 1 hour of life
 
 pub const CREATURE_BITFLAG_IS_ALIVE        : u8    = 0b0000_0001;
 pub const CREATURE_BITFLAG_CAN_REPRODUCE   : u8    = 0b0000_0010;

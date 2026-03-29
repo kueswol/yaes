@@ -48,8 +48,8 @@ fn initialize_world() -> World {
     // let world = World::new(3263687907895456594);
     let mut world = World::default();
 
-    // println!("[MAIN ]: initializing world");
-    // world.spawn_random_creatures(50);
+    println!("[MAIN ]: initializing world");
+    world.spawn_random_creatures(2000);
 
     world
 }
@@ -70,7 +70,12 @@ async fn start_webserver(world: Arc<Mutex<World>>, channel_web2sim_tx: std::sync
 
 #[test]
 fn test() {
-    let mut world = World::default();
-    // world.spawn_creature(None, None);
-    world.tick();
+    // let mut world = World::default();
+    // // world.spawn_creature(None, None);
+    // world.tick();
+
+
+    let total_food: u64 = 3999999;
+    let cycle_count = 4 - (total_food / 1_000_000);
+    println!("{}", cycle_count);
 }
