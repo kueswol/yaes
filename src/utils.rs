@@ -22,6 +22,7 @@ pub struct SimParams {
 #[derive(Clone, Copy, Serialize, serde::Deserialize)]
 pub struct SimParamWorld {
     pub max_population: usize,
+    pub min_population: usize,
     pub food_regrowth_amount: u8,
     pub food_regrowth_ticks: u64,
 }

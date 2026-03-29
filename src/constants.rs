@@ -10,6 +10,7 @@ pub const RNG_WORLD_SEED                : u64   = 42;
 /// ---------------------------------------------------------------------------------------------------------
 
 pub const MAX_POPULATION                : usize = 10_000;
+pub const MIN_POPULATION                : usize = 100;
 pub const WORLD_WIDTH                   : u32   = 200;
 pub const WORLD_HEIGHT                  : u32   = 200;
 pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   = 5;   // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT

@@ -83,6 +83,7 @@ impl World {
                 paused: true,
                 world: SimParamWorld {
                     max_population      : c::MAX_POPULATION,
+                    min_population      : c::MIN_POPULATION,
                     food_regrowth_amount: c::FOOD_REGROWTH_AMOUNT,
                     food_regrowth_ticks : c::FOOD_REGROWTH_TICKS,
                 },
@@ -146,8 +147,12 @@ impl World {
     /// let the world tick
     pub fn tick(&mut self) {
         
-        if self.creatures.len() <= 50 {
-            self.spawn_creature(None, Some(Coordinate { x: c::WORLD_WIDTH as f32 / 2.0, y: c::WORLD_HEIGHT as f32 / 2.0 }));
+        if self.creatures.len() < self.params.world.min_population {
+            let center_x: f32 = c::WORLD_WIDTH as f32 / 2.0;
+            let center_y: f32 = c::WORLD_HEIGHT as f32 / 2.0;
+            let rng_x = self.rng.gen_range((center_x - 10.0)..(center_x + 10.0));
+            let rng_y = self.rng.gen_range((center_y - 10.0)..(center_y + 10.0));
+            self.spawn_creature(None, Some(Coordinate { x: rng_x, y: rng_y }));
             // self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
         }
 
@@ -165,7 +170,7 @@ impl World {
         self.update_spatial_map();
         // self.handle_separation();
 
-        if self.tick_counter & c::FOOD_REGROWTH_TICKS == 0 {
+        if self.tick_counter & self.params.world.food_regrowth_ticks == 0 {
             self.grow_food();
         }
 
@@ -608,7 +613,7 @@ impl World {
                     if *sprint { factor = 1.5; }
 
                     self.pending_energy_costs
-                        .push((*entity_id, c::ENERGY_COST_MOVE_NORMAL * factor));
+                        .push((*entity_id, self.params.energy.cost_move_norm * factor));
                 }
                 _ => {}
             }
@@ -647,9 +652,9 @@ impl World {
                 self.reproduce_failed_age += 1;
                 continue;
             }
-            if self.energies[entity_id] < c::ENERGY_COST_REPRODUCE {
+            if self.energies[entity_id] < self.params.energy.cost_reproduce {
                 self.reproduce_failed_energy += 1;
-                self.pending_energy_costs.push((entity_id, c::ENERGY_COST_REPRODUCE / 2.0));
+                self.pending_energy_costs.push((entity_id, self.params.energy.cost_reproduce / 2.0));
                 continue;
             }
             if self.reproduce_cooldown[entity_id] > self.tick_counter {
@@ -671,7 +676,7 @@ impl World {
             self.spawn_creature(Some(new_dna), Some(new_position));
 
             self.pending_energy_costs
-                .push((entity_id, c::ENERGY_COST_REPRODUCE));
+                .push((entity_id, self.params.energy.cost_reproduce));
             self.births += 1;
         }
     }
@@ -894,7 +899,7 @@ impl World {
         let x = (pos.x as usize).clamp(0,(c::WORLD_WIDTH  - 1) as usize);
         let y = (pos.y as usize).clamp(0,(c::WORLD_HEIGHT - 1) as usize);
         let index = y * (c::WORLD_WIDTH as usize) + x;
-        (foodmap[index] as f32 + c::ENERGY_COST_EAT >= 0.0, index, foodmap[index])
+        (foodmap[index] > 0, index, foodmap[index])
     }
 
     /******************************************************************************************************************************************/
