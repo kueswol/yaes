@@ -103,6 +103,14 @@ impl World {
                     chance_loosing_new_neuron: c::MUTATE_CHANCE_LOOSING_NEW_NEURON,
                     chance_mutate_looks      : c::MUTATE_CHANCE_MUTATE_LOOKS,
                 },
+                creature: SimParamCreature {
+                    max_age: c::CREATURE_MAX_AGE,
+                    reproduce_age_min: c::REPRODUCE_AGE_MIN,
+                    reproduce_age_max: c::REPRODUCE_AGE_MAX,
+                    speed: c::CREATURE_SPEED,
+                    speed_sprint: c::CREATURE_SPEED_SPRINT,
+                    speed_creep: c::CREATURE_SPEED_CREEP,
+                },
             },
             rng,
             foodmap,
@@ -207,7 +215,7 @@ impl World {
             new_creature_dna.bytes[2],
             new_creature_dna.bytes[3]
         ];
-        let new_creature_reproduce_cooldown: u64 = self.tick_counter + c::REPRODUCE_AGE_MIN - 10 + (self.rng.gen_range(0..20));
+        let new_creature_reproduce_cooldown: u64 = self.tick_counter + self.params.creature.reproduce_age_min - 10 + (self.rng.gen_range(0..20));
 
         // we trust, that all vectors are aligned, so new creatures and its components will just be pushed at the end of the vectors
         self.creatures.push(0b0000_0001);
@@ -374,6 +382,7 @@ impl World {
         let ages = &self.ages;
         let tick_counter = &self.tick_counter;
         let foodmap = &self.foodmap;
+        let max_speed = self.params.creature.speed_sprint;
 
         self.brain_inputs
             .par_iter_mut()
@@ -422,13 +431,13 @@ impl World {
                 ) << 15;
 
                 // can eat (is there food at the current position?)
-                *input |= ((foodmap[(pos.y as usize).clamp(0,99) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,99)] > 0) as u64) << 18;
+                *input |= ((foodmap[(pos.y as usize).clamp(0,c::WORLD_HEIGHT as usize - 1) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,c::WORLD_WIDTH as usize - 1)] > 0) as u64) << 18;
                 
                 // are we facing the border;
-                *input |= (Self::check_border_ahead(pos, orientations[entity_id]) as u64) << 19;
+                *input |= (Self::check_border_ahead(pos, orientations[entity_id], max_speed) as u64) << 19;
 
                 // fodd ahead! we can check the 3 tiles ahead in a cone, and encode that information in 2 bits for more_food_ahead_left and more_food_ahead_right
-                let (food_ahead_left, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], foodmap);
+                let (food_ahead_left, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], foodmap, max_speed);
                 *input |= (food_ahead_left  as u64) << 20; // more_food_ahead_left
                 *input |= (food_ahead_right as u64) << 21; // more_food_ahead_right
         });
@@ -581,7 +590,7 @@ impl World {
                 self.foodmap[index] = new_value;
                 self.pending_energy_costs.push((entity_id, (-1.0 * food_eaten as f32))); // negative cost => energy gain
                 self.eat_success += 1;
-                return;
+                continue;
             }
             self.eat_failed += 1;
         }
@@ -594,11 +603,18 @@ impl World {
             match action {
                 CreatureEvent::Move { sprint, creep } => {
                     let speed = if *sprint {
-                        c::CREATURE_SPEED_SPRINT / self.sizes[*entity_id]
+                        self.params.creature.speed_sprint / self.sizes[*entity_id]
                     } else if *creep {
-                        c::CREATURE_SPEED_CREEP / self.sizes[*entity_id]
+                        self.params.creature.speed_creep / self.sizes[*entity_id]
                     } else {
-                        c::CREATURE_SPEED / self.sizes[*entity_id]
+                        self.params.creature.speed / self.sizes[*entity_id]
+                    };
+                    let energy = if *sprint {
+                        self.params.energy.cost_move_fast
+                    } else if *creep {
+                        self.params.energy.cost_move_slow
+                    } else {
+                        self.params.energy.cost_move_norm
                     };
                     
                     let dx = self.orientations[*entity_id].cos() * speed;
@@ -608,12 +624,8 @@ impl World {
                         (self.positions[*entity_id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
                     self.positions[*entity_id].y =
                         (self.positions[*entity_id].y + dy).clamp(0.0, c::WORLD_HEIGHT as f32);
-                    
-                    let mut factor: f32 = 1.0;
-                    if *sprint { factor = 1.5; }
-
                     self.pending_energy_costs
-                        .push((*entity_id, self.params.energy.cost_move_norm * factor));
+                        .push((*entity_id, energy));
                 }
                 _ => {}
             }
@@ -648,7 +660,7 @@ impl World {
 
         for (entity_id, _action) in reproductions {
             let age = (self.tick_counter) - self.ages[entity_id];
-            if age < c::REPRODUCE_AGE_MIN || age > c::REPRODUCE_AGE_MAX {
+            if age < self.params.creature.reproduce_age_min || age > self.params.creature.reproduce_age_max {
                 self.reproduce_failed_age += 1;
                 continue;
             }
@@ -665,7 +677,7 @@ impl World {
             let mut new_dna = self.dnas[entity_id].clone();
             self.reproduce_success += 1;
             self.creatures[entity_id] &= !c::CREATURE_BITFLAG_CAN_REPRODUCE; // reset reproduce ability until next age check
-            self.reproduce_cooldown[entity_id] = self.tick_counter + (c::REPRODUCE_AGE_MIN / 2) - 10 + (self.rng.gen_range(0..20)); // set reproduce cooldown
+            self.reproduce_cooldown[entity_id] = self.tick_counter + (self.params.creature.reproduce_age_min / 4) - 10 + (self.rng.gen_range(0..20)); // set reproduce cooldown
             
             new_dna.mutate(&mut self.rng,&self.params.mutation);
             let new_position = Coordinate {
@@ -717,14 +729,14 @@ impl World {
             .enumerate()
             .filter_map(|(entity_id, creature)| {
                 let age = tick_counter - ages[entity_id] as u64;
-                if age > c::REPRODUCE_AGE_MIN as u64 
-                && age < c::REPRODUCE_AGE_MAX as u64
-                && self.reproduce_cooldown[entity_id] == 0 {
+                if age > self.params.creature.reproduce_age_min as u64 
+                && age < self.params.creature.reproduce_age_max as u64
+                && self.reproduce_cooldown[entity_id] <= self.tick_counter {
                     *creature |= c::CREATURE_BITFLAG_CAN_REPRODUCE;
                 } else {
                     *creature &= !c::CREATURE_BITFLAG_CAN_REPRODUCE;
                 }
-                if age > c::CREATURE_MAX_AGE as u64 {
+                if age > self.params.creature.max_age as u64 {
                     return Some(entity_id);
                 }
                 None
@@ -823,7 +835,7 @@ impl World {
             let regrowth = ((self.params.world.food_regrowth_amount as f32 * (fertility as f32 / 255.0)) as u8).max(1);
             let new_val = cell.saturating_add(regrowth);
             
-            *cell = cell.saturating_add(new_val).min(max_food);
+            *cell = new_val.min(max_food);
 
             // if rng.gen_bool(fertility as f64 / 255.0) {
             //     *cell = cell.saturating_add(self.params.world.food_regrowth_amount);
@@ -835,10 +847,10 @@ impl World {
     /// update internal world statistics
     fn update_stats(&mut self) {
         let total_energy: f32 = self.energies.iter().sum();
-        self.avg_energy = total_energy / self.creatures.len() as f32;
+        self.avg_energy = total_energy / self.creatures.len().max(1) as f32;
         
         let total_age: u64 = self.ages.iter().sum();
-        self.avg_age = self.tick_counter as f32 - (total_age as f32 / self.creatures.len() as f32);
+        self.avg_age = self.tick_counter as f32 - (total_age as f32 / self.creatures.len().max(1) as f32);
 
         self.total_food = self.foodmap.par_iter().map(|&b| b as u64).sum();
     }
@@ -899,23 +911,24 @@ impl World {
         let x = (pos.x as usize).clamp(0,(c::WORLD_WIDTH  - 1) as usize);
         let y = (pos.y as usize).clamp(0,(c::WORLD_HEIGHT - 1) as usize);
         let index = y * (c::WORLD_WIDTH as usize) + x;
-        (foodmap[index] > 0, index, foodmap[index])
+        let has_food: bool = foodmap[index] > 0;
+        (has_food, index, foodmap[index])
     }
 
     /******************************************************************************************************************************************/
     /// check whether there's a border ahead in the current direction
     #[inline(always)]
-    fn check_border_ahead(pos: &Coordinate, orientation: f32) -> bool {
-        let look_ahead_x = pos.x + orientation.cos() * c::CREATURE_SPEED_SPRINT * 1.1; // 10% over the distance reachable with sprint
-        let look_ahead_y = pos.y + orientation.sin() * c::CREATURE_SPEED_SPRINT * 1.1;
+    fn check_border_ahead(pos: &Coordinate, orientation: f32, max_speed: f32) -> bool {
+        let look_ahead_x = pos.x + orientation.cos() * max_speed * 1.1; // 10% over the distance reachable with sprint
+        let look_ahead_y = pos.y + orientation.sin() * max_speed * 1.1;
         look_ahead_x < 0.0 || look_ahead_x >= c::WORLD_WIDTH as f32 || look_ahead_y < 0.0 || look_ahead_y >= c::WORLD_HEIGHT as f32
     }
 
     /******************************************************************************************************************************************/
     /// check whether there's food ahead in the current direction
     #[inline(always)]
-    fn check_food_ahead(pos: &Coordinate, orientation: f32, foodmap: &Vec<u8>) -> (bool, bool) {
-        let look_ahead_distance = c::CREATURE_SPEED_SPRINT * 1.1; // 10% over the distance reachable with sprint
+    fn check_food_ahead(pos: &Coordinate, orientation: f32, foodmap: &Vec<u8>, max_speed: f32) -> (bool, bool) {
+        let look_ahead_distance = max_speed * 1.1; // 10% over the distance reachable with sprint
         // let look_ahead_x = pos.x + orientation.cos() * look_ahead_distance;
         // let look_ahead_y = pos.y + orientation.sin() * look_ahead_distance;
 

@@ -161,7 +161,7 @@
         <div id="sim-params-editor" style="margin-top: 12px;">
             <h3 style="margin: 6px 0 8px 0;">Simulation Parameters</h3>
             <table style="width: 100%; border-collapse: collapse;">
-                <tr><td>Target TPS</td><td><input type="range" id="tps-slider" class="control-slider" min="1" max="100" step="1" value="25" style="width: 100%;"><span id="tps-value" class="control-slider-value">25</span></td></tr>
+                <tr><td>Target TPS</td><td><input type="range" id="tps-slider" class="control-slider" min="1" max="100" step="1" value="25" style="width: 80%;"><span id="tps-value" class="control-slider-value">25</span></td></tr>
                 <tr><td>Max population</td><td><input id="param_max_population" type="number" min="1" max="10000" step="1" style="width: 100%;"></td></tr>
                 <tr><td>Min population</td><td><input id="param_min_population" type="number" min="0" max="10000" step="1" style="width: 100%;"></td></tr>
                 <tr><td>Food regrowth amount</td><td><input id="param_food_regrowth_amount" type="number" min="0" max="255" step="1" style="width: 100%;"></td></tr>
@@ -172,6 +172,12 @@
                 <tr><td>Cost move slow</td><td><input id="param_cost_move_slow" type="number" min="0" max="100" step="0.1" style="width: 100%;"></td></tr>
                 <tr><td>Cost move normal</td><td><input id="param_cost_move_norm" type="number" min="0" max="100" step="0.1" style="width: 100%;"></td></tr>
                 <tr><td>Cost move fast</td><td><input id="param_cost_move_fast" type="number" min="0" max="100" step="0.1" style="width: 100%;"></td></tr>
+                <tr><td>Creature Max age</td><td><input id="param_creature_max_age" type="number" min="12" step="10" style="width: 100%;"></td></tr>
+                <tr><td>Creature Repr. Age Min</td><td><input id="param_creature_reproduce_age_min" type="number" min="10" step="10" style="width: 100%;"></td></tr>
+                <tr><td>Creature Repr. Age Max</td><td><input id="param_creature_reproduce_age_max" type="number" min="11" step="10" style="width: 100%;"></td></tr>
+                <tr><td>Creature Speed</td><td><input id="param_creature_speed" type="number" min="0.01" step="0.01" style="width: 100%;"></td></tr>
+                <tr><td>Creature Speed Sprint</td><td><input id="param_creature_speed_sprint" type="number" min="0.01" step="0.01" style="width: 100%;"></td></tr>
+                <tr><td>Creature Speed Creep</td><td><input id="param_creature_speed_creep" type="number" min="0.01" step="0.01" style="width: 100%;"></td></tr>
                 <tr><td>Mutate bit flip mask</td><td><input id="param_chance_bit_flip_mask" type="number" min="0" max="1" step="0.01" style="width: 100%;"></td></tr>
                 <tr><td>Mutate change threshold</td><td><input id="param_chance_change_threshold" type="number" min="0" max="1" step="0.01" style="width: 100%;"></td></tr>
                 <tr><td>Mutate target bit</td><td><input id="param_chance_change_target_bit" type="number" min="0" max="1" step="0.01" style="width: 100%;"></td></tr>
@@ -804,6 +810,13 @@
         const param_cost_move_slow = document.getElementById("param_cost_move_slow");
         const param_cost_move_norm = document.getElementById("param_cost_move_norm");
         const param_cost_move_fast = document.getElementById("param_cost_move_fast");
+        
+        const param_creature_max_age = document.getElementById("param_creature_max_age");
+        const param_creature_reproduce_age_min = document.getElementById("param_creature_reproduce_age_min");
+        const param_creature_reproduce_age_max = document.getElementById("param_creature_reproduce_age_max");
+        const param_creature_speed = document.getElementById("param_creature_speed");
+        const param_creature_speed_sprint = document.getElementById("param_creature_speed_sprint");
+        const param_creature_speed_creep = document.getElementById("param_creature_speed_creep");
 
         const param_chance_bit_flip_mask = document.getElementById("param_chance_bit_flip_mask");
         const param_chance_change_threshold = document.getElementById("param_chance_change_threshold");
@@ -852,6 +865,13 @@
             param_cost_move_norm.value = params.energy.cost_move_norm;
             param_cost_move_fast.value = params.energy.cost_move_fast;
 
+            param_creature_max_age.value = params.creature.max_age;
+            param_creature_reproduce_age_min.value = params.creature.reproduce_age_min;
+            param_creature_reproduce_age_max.value = params.creature.reproduce_age_max;
+            param_creature_speed.value = params.creature.speed;
+            param_creature_speed_sprint.value = params.creature.speed_sprint;
+            param_creature_speed_creep.value = params.creature.speed_creep;
+
             param_chance_bit_flip_mask.value = params.mutation.chance_bit_flip_mask;
             param_chance_change_threshold.value = params.mutation.chance_change_threshold;
             param_chance_change_target_bit.value = params.mutation.chance_change_target_bit;
@@ -885,6 +905,14 @@
                     chance_gaining_new_neuron: Number(param_chance_gaining_new_neuron.value),
                     chance_loosing_new_neuron: Number(param_chance_loosing_new_neuron.value),
                     chance_mutate_looks: Number(param_chance_mutate_looks.value),
+                },
+                creature: {
+                    max_age: Number(param_creature_max_age.value),
+                    reproduce_age_min: Number(param_creature_reproduce_age_min.value),
+                    reproduce_age_max: Number(param_creature_reproduce_age_max.value),
+                    speed: Number(param_creature_speed.value),
+                    speed_sprint: Number(param_creature_speed_sprint.value),
+                    speed_creep: Number(param_creature_speed_creep.value),
                 },
                 target_tps: Number(targetTPS),
                 paused: param_paused.checked,
