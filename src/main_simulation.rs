@@ -83,11 +83,13 @@ fn process_web2sim_messages(
                 *target_tick_duration = Duration::from_secs_f64(1.0 / tps);
                 println!("[SIM  ]: Target TPS set to {}", tps);
             },
-            ChannelWeb2SimMessage::UpdateSimParams(params) => {
+            ChannelWeb2SimMessage::UpdateSimParams(new_params) => {
                 {
-                    let mut world = world.lock().unwrap();
-                    world.set_sim_params(params);
+                    let mut world_locked = world.lock().unwrap();
+                    world_locked.set_sim_params(new_params);
                 }
+                *params = new_params;
+                *target_tick_duration = Duration::from_secs_f64(1.0 / params.target_tps);
                 println!("[SIM  ]: Simulation parameters updated");
             },
         }

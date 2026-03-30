@@ -14,6 +14,7 @@ pub struct SimParams {
     pub world: SimParamWorld,
     pub energy: SimParamEnergy,
     pub mutation: SimParamMutation,
+    pub creature: SimParamCreature,
     pub target_tps: f64,
     pub paused: bool,
 }
@@ -22,6 +23,7 @@ pub struct SimParams {
 #[derive(Clone, Copy, Serialize, serde::Deserialize)]
 pub struct SimParamWorld {
     pub max_population: usize,
+    pub min_population: usize,
     pub food_regrowth_amount: u8,
     pub food_regrowth_ticks: u64,
 }
@@ -35,6 +37,17 @@ pub struct SimParamEnergy {
     pub cost_move_slow: f32,
     pub cost_move_norm: f32,
     pub cost_move_fast: f32,
+}
+
+/****************************************************************************************************************/
+#[derive(Clone, Copy, Serialize, serde::Deserialize)]
+pub struct SimParamCreature {
+    pub max_age: u64,
+    pub reproduce_age_min: u64,
+    pub reproduce_age_max: u64,
+    pub speed: f32,
+    pub speed_sprint: f32,
+    pub speed_creep: f32,
 }
 
 /****************************************************************************************************************/
