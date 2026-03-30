@@ -4,7 +4,7 @@ use axum::{
     extract::State,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
 };
 use std::sync::{Arc, Mutex};
 
@@ -20,6 +20,8 @@ pub async fn start_webserver(
     let app = Router::new()
         .route("/", get(root))
         .route("/world", get(world_stats))
+        .route("/sim_params", get(sim_params))
+        .route("/sim_params", post(update_sim_params))
         .route("/creature/{id}", get(creature_detail))
         .route("/ws", get(ws_handler))
         .with_state((world, channel_web2sim_tx));
@@ -66,6 +68,31 @@ async fn creature_detail(
 ) -> Json<CreatureDetailView> {
     let world = world.lock().unwrap();
     Json(world.get_creature_detail_view(id))
+}
+
+/******************************************************************************************************************************************/
+/// route "/sim_params"
+async fn sim_params(
+    State((world, _channel_web2sim_sender)): State<(
+        Arc<Mutex<World>>,
+        std::sync::mpsc::Sender<ChannelWeb2SimMessage>,
+    )>,
+) -> Json<SimParams> {
+    let world = world.lock().unwrap();
+    Json(world.get_sim_params())
+}
+
+/******************************************************************************************************************************************/
+/// route "/sim_params" (apply)
+async fn update_sim_params(
+    State((_world, channel_web2sim_sender)): State<(
+        Arc<Mutex<World>>,
+        std::sync::mpsc::Sender<ChannelWeb2SimMessage>,
+    )>,
+    axum::Json(params): axum::Json<SimParams>,
+) -> Json<SimParams> {
+    let _ = channel_web2sim_sender.send(ChannelWeb2SimMessage::UpdateSimParams(params));
+    Json(params)
 }
 
 /******************************************************************************************************************************************/
