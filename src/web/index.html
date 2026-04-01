@@ -198,15 +198,15 @@
         const size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
         const gl = canvas.getContext("webgl");
         // world
-        const SCALE = 1;
-        const worldWidth = 200 * SCALE;
-        const worldHeight = 200 * SCALE;
+        const SCALE = 10;
+        const worldWidth = 300 * SCALE;
+        const worldHeight = 300 * SCALE;
 
-        const MIN_ZOOM = 0.99;
+        const MIN_ZOOM = 1.00;
         const MAX_ZOOM = 200;
-        let cameraX = 50;
-        let cameraY = 50;
-        let zoom = 0.99;
+        let cameraX = 150;
+        let cameraY = 150;
+        let zoom = 1.00;
         
         const emptyData = new Uint8Array((worldWidth / SCALE) * (worldHeight / SCALE) * 4);
         
@@ -321,7 +321,7 @@
             cameraY = Math.max(halfH, Math.min(worldHeight - halfH, cameraY));
         }
         function checkCreatureClick(worldX, worldY) {
-            const clickRadius = 10; // radius in world units for clicking creatures
+            const clickRadius = 5; // radius in world units for clicking creatures
             for (const creature of creatures) {
                 const dx = creature.x - worldX;
                 const dy = creature.y - worldY;
@@ -461,8 +461,8 @@
         void main() {
             float value = texture2D(foodmap, v_uv).r;
             vec3 color = mix(
-                vec3(0.3, 0.3, 0.3),   // leer
-                vec3(0.0, 0.4, 0.0),   // Nahrung
+                vec3(0.4, 0.4, 0.4),   // leer
+                vec3(0.0, 0.5, 0.0),   // Nahrung
                 value
             );
             gl_FragColor = vec4(color, 1.0);
@@ -577,8 +577,8 @@
                 const viewportX = mouseX - offsetX;
                 const viewportY = mouseY - offsetY;                
                 if (viewportX >= 0 && viewportX <= size && viewportY >= 0 && viewportY <= size) {
-                    const worldX = cameraX + (viewportX / size - 0.5) * worldWidth / zoom;
-                    const worldY = cameraY - (viewportY / size - 0.5) * worldHeight / zoom;
+                    const worldX = (cameraX + (viewportX / size - 0.5) * worldWidth  / zoom);
+                    const worldY = (cameraY - (viewportY / size - 0.5) * worldHeight / zoom);
                     console.log("Clicked at world:", worldX, worldY);
                     checkCreatureClick(worldX, worldY);
                 }
@@ -637,7 +637,7 @@
                     const id = view.getUint32(i, true); // Little-endian
                     const x = view.getFloat32(i + 4, true) * SCALE;
                     const y = view.getFloat32(i + 8, true) * SCALE;
-                    const size = view.getFloat32(i + 12, true) * SCALE;
+                    const size = view.getFloat32(i + 12, true) * SCALE + 2;
                     const r = payload[i + 16] / 255.0;
                     const g = payload[i + 17] / 255.0;
                     const b = payload[i + 18] / 255.0;
