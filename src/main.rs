@@ -46,10 +46,10 @@ async fn main() {
 fn initialize_world() -> World {
     // let world = World::new(c::RNG_WORLD_SEED);
     // let world = World::new(3263687907895456594);
-    let world = World::default();
+    let mut world = World::default();
 
-    // println!("[MAIN ]: initializing world");
-    // world.spawn_random_creatures(2000);
+    println!("[MAIN ]: initializing world");
+    world.spawn_random_creatures(500);
 
     world
 }

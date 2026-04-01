@@ -371,13 +371,14 @@ impl World {
     ///   [13] LastAction Eat,          [14] LastAction Reproduce,    [15] can_reproduce,
     ///   [16] age low,                 [17] age mid,                 [18] age high,
     ///   [19] can_eat,                 [20] border_ahead,            [21] more_food_ahead_left,
-    ///   [22] more_food_ahead_right,   [23] unused,                  [24] unused
+    ///   [22] more_food_ahead_right,   [23] is_full (E >= 90%),      [24] unused
     fn update_brain_inputs(&mut self) {
         // for each creature, gather sensory data and update brain_inputs
         let energies = &self.energies;
         let positions = &self.positions;
         let orientations = &self.orientations;
         let creatures = &self.creatures;
+        let sizes = &self.sizes;
         let brain_outputs = &self.brain_outputs;
         let ages = &self.ages;
         let tick_counter = &self.tick_counter;
@@ -436,13 +437,16 @@ impl World {
                 // are we facing the border;
                 *input |= (Self::check_border_ahead(pos, orientations[entity_id], max_speed) as u64) << 19;
 
-                // fodd ahead! we can check the 3 tiles ahead in a cone, and encode that information in 2 bits for more_food_ahead_left and more_food_ahead_right
+                // food ahead! we can check the 3 tiles ahead in a cone, and encode that information in 2 bits for more_food_ahead_left and more_food_ahead_right
                 let (food_ahead_left, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], foodmap, max_speed);
                 *input |= (food_ahead_left  as u64) << 20; // more_food_ahead_left
                 *input |= (food_ahead_right as u64) << 21; // more_food_ahead_right
+
+                // 90% of max_energy reached
+                let max_energy = 90.0 + (sizes[entity_id] * 100.0);
+                *input |= ((energies[entity_id] >= max_energy * 0.9) as u64) << 22;
         });
 
-        // *input |= something else << 22;
         // *input |= something else << 23;
     }
 
@@ -585,10 +589,13 @@ impl World {
             let (has_food, index, food_amount) = Self::has_food(&self.foodmap, pos);
             if has_food {
                 let food_eaten = (self.params.energy.cost_eat.abs() as u8).min(food_amount); // we can only eat as much food as there is, and we want to eat at most the absolute value of the energy cost
-                let old_value = self.foodmap[index];
-                let new_value = old_value.saturating_sub(food_eaten);
-                self.foodmap[index] = new_value;
-                self.pending_energy_costs.push((entity_id, (-1.0 * food_eaten as f32))); // negative cost => energy gain
+                self.foodmap[index] = self.foodmap[index].saturating_sub(food_eaten);
+                let mut nutrition_value = (food_eaten as f32) * -1.0 * self.sizes[entity_id] * self.sizes[entity_id]; // bigger creatures get more nutrition out of the same amount of food
+                if pos.x >= c::BRAIN_INPUTS_BUCKET_POSX_C_R {
+                    
+                    nutrition_value *= 0.5;
+                }
+                self.pending_energy_costs.push((entity_id, nutrition_value)); // negative cost => energy gain
                 self.eat_success += 1;
                 continue;
             }
@@ -609,7 +616,7 @@ impl World {
                     } else {
                         self.params.creature.speed / self.sizes[*entity_id]
                     };
-                    let energy = if *sprint {
+                    let mut energy = if *sprint {
                         self.params.energy.cost_move_fast
                     } else if *creep {
                         self.params.energy.cost_move_slow
@@ -620,12 +627,18 @@ impl World {
                     let dx = self.orientations[*entity_id].cos() * speed;
                     let dy = self.orientations[*entity_id].sin() * speed;
 
-                    self.positions[*entity_id].x =
-                        (self.positions[*entity_id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
-                    self.positions[*entity_id].y =
-                        (self.positions[*entity_id].y + dy).clamp(0.0, c::WORLD_HEIGHT as f32);
-                    self.pending_energy_costs
-                        .push((*entity_id, energy));
+                    let new_x = (self.positions[*entity_id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
+                    let new_y = (self.positions[*entity_id].y + dy).clamp(0.0, c::WORLD_HEIGHT as f32);
+                    
+                    self.positions[*entity_id].x = new_x;
+                    self.positions[*entity_id].y = new_y;
+                    
+                    // if new_x >= c::WORLD_WIDTH as f32 / 2.0 {
+                    if new_x >= c::BRAIN_INPUTS_BUCKET_POSX_C_R {
+                        energy *= 3.0; // moving on the right side of the world is more costly
+                    }
+                    self.pending_energy_costs.push((*entity_id, energy));
+                    
                 }
                 _ => {}
             }
@@ -709,7 +722,8 @@ impl World {
             }
 
             let energy = &mut self.energies[id];
-            *energy = (*energy - total).clamp(-1.0, 100.0);
+            let max_energy = 90.0 + (self.sizes[id] * 100.0); // max energy based on size
+            *energy = (*energy - total).clamp(-1.0, max_energy);
             if *energy <= 0.0 {
                 self.pending_deaths.push(id);
             }
