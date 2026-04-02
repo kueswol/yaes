@@ -31,7 +31,8 @@ pub const ENERGY_COST_MOVE_SPRINT          : f32   =   0.4;
 pub const ENERGY_COST_FIRED_NEURON         : f32   =   0.005;
 pub const ENERGY_COST_IDLE                 : f32   =  10.0;
 
-pub const REPRODUCE_AGE_MIN                : u64   =  7_500; // at 25tps that's 5 minutes of life
+pub const REPRODUCE_AGE_MIN                : u64   =  1_500; // at 25tps that's 5 minutes of life
+// pub const REPRODUCE_AGE_MIN                : u64   =  7_500; // at 25tps that's 5 minutes of life
 pub const REPRODUCE_AGE_MAX                : u64   = 82_500; // at 25tps that's 55 minutes of life
 pub const CREATURE_MAX_AGE                 : u64   = 90_000;  // at 25tps that's 1 hour of life
 

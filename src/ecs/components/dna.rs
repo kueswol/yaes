@@ -50,14 +50,14 @@ impl Dna {
         // let type_hi2: u8 = 2;
         let type_out: u8 = 4;
 
-        // scaffold neuron, hidden1, reads "can_eat", "energy_low" & "energy_medium" and outputs to bit 64
+        // scaffold neuron, hidden1, reads "can_eat" & "energy_low" and outputs to bit 64
         //                  output, forwards hidden1's bit 64 to action bit 3 (eat)
-        bytes.extend_from_slice(&[ 0b00000011, 0b00000000, 0b00000100, 0b00000000, 0b00000000, type_hi1, 1_u8, 23_u8]);
+        bytes.extend_from_slice(&[ 0b00000001, 0b00000000, 0b00000100, 0b00000000, 0b00000000, type_hi1, 1_u8, 23_u8]);
         bytes.extend_from_slice(&[ 0b00000000, 0b00000000, 0b10000000, 0b00000000, 0b00000000, type_out, 0_u8,  2_u8]);
         
         // scaffold neuron, hidden1, reads "can_reproduce" & "energy_high" and outputs to bit 63
         //                  output, forwards hidden1's bit 63 to action bit 1 (reproduce)
-        bytes.extend_from_slice(&[ 0b00000100, 0b01000000, 0b00000000, 0b00000000, 0b00000000, type_hi1, 1_u8, 22_u8]);
+        bytes.extend_from_slice(&[ 0b00000010, 0b01000000, 0b00000000, 0b00000000, 0b00000000, type_hi1, 1_u8, 22_u8]);
         bytes.extend_from_slice(&[ 0b00000000, 0b00000000, 0b01000000, 0b00000000, 0b00000000, type_out, 0_u8,  0_u8]);
         
         // scaffold neuron, hidden1, reads "energy_low" and outputs to bit 62
