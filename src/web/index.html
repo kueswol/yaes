@@ -248,6 +248,7 @@
             gl.clearColor(0.16, 0.23, 0.23, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
+            terrainLayer.draw();
             foodLayer.draw();
             gridLayer.draw();
             creatureLayer.draw();
@@ -365,6 +366,14 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, worldWidth / SCALE, worldHeight / SCALE, 0, gl.RGBA, gl.UNSIGNED_BYTE, emptyData);
 
+        const terrainTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, terrainTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, worldWidth / SCALE, worldHeight / SCALE, 0, gl.RGBA, gl.UNSIGNED_BYTE, emptyData);
+
         // shader sources
         const creatureVertexShaderSource = `
         attribute vec2 position;       // creature center position
@@ -460,12 +469,59 @@
         varying vec2 v_uv;
         void main() {
             float value = texture2D(foodmap, v_uv).r;
-            vec3 color = mix(
-                vec3(0.4, 0.4, 0.4),   // leer
-                vec3(0.0, 0.5, 0.0),   // Nahrung
-                value
+            float v = smoothstep(0.08, 0.25, value);
+            vec3 col = vec3(0.0, 0.5, 0.0) * v;
+            gl_FragColor = vec4(col, v);
+        }
+        `;
+
+        const terrainVertexShaderSource = `
+        attribute vec2 position;
+        uniform vec2 worldSize;
+        uniform vec2 camera;
+        uniform float zoom;
+        varying vec2 v_uv;
+        void main() {
+            vec2 world = (position - camera) * zoom;
+            vec2 clip = vec2(
+                world.x / worldSize.x * 2.0,
+                world.y / worldSize.y * 2.0
             );
-            gl_FragColor = vec4(color, 1.0);
+            gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+            v_uv = position / worldSize;
+        }
+        `;
+
+        const terrainFragmentShaderSource = `
+        precision mediump float;
+        uniform sampler2D terrainmap;
+        varying vec2 v_uv;
+        
+        // Simple pseudo-random based on position
+        float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+        
+        void main() {
+            float terrainValue = texture2D(terrainmap, v_uv).r;
+            vec3 baseColor;
+            float noise;
+            
+            if (terrainValue < 0.5) {
+                // Grassland (terrain == 0)
+                baseColor = vec3(0.0, 0.5, 0.0);
+                vec2 sample = floor(v_uv * 120.0) / 120.0;
+                noise = (hash(sample + vec2(0.0, 0.0)) - 0.5) * 0.10; // coarser noise
+                baseColor.g += noise;
+            } else {
+                // Swamp (terrain == 1)
+                baseColor = vec3(0.25, 0.28, 0.18);
+                vec2 sample = floor(v_uv * 120.0) / 120.0;
+                noise = (hash(sample + vec2(1.0, 1.0)) - 0.5) * 0.15; // coarser noise
+                baseColor.b += noise;
+            }
+            
+            gl_FragColor = vec4(baseColor, 1.0);
         }
         `;
 
@@ -478,6 +534,8 @@
         const gridFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, gridFragmentShaderSource);
         const foodmapVertexShader = createShader(gl, gl.VERTEX_SHADER, foodmapVertexShaderSource);
         const foodmapFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, foodmapFragmentShaderSource);
+        const terrainVertexShader = createShader(gl, gl.VERTEX_SHADER, terrainVertexShaderSource);
+        const terrainFragmentShader = createShader(gl, gl.FRAGMENT_SHADER, terrainFragmentShaderSource);
 
         // WebGL programs
         const creatureProgram = gl.createProgram();
@@ -501,6 +559,11 @@
         const foodZoomLocation = gl.getUniformLocation(foodmapProgram, "zoom");
         const foodWorldSizeLocation = gl.getUniformLocation(foodmapProgram, "worldSize");
         const foodSamplerLocation = gl.getUniformLocation(foodmapProgram, "foodmap");
+
+        const terrainProgram = gl.createProgram();
+        gl.attachShader(terrainProgram, terrainVertexShader);
+        gl.attachShader(terrainProgram, terrainFragmentShader);
+        gl.linkProgram(terrainProgram);
 
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -667,6 +730,29 @@
         ///////////////////////////////////////////////////////////////////////////////////////
         // WebGL Layers
         ///////////////////////////////////////////////////////////////////////////////////////
+        const terrainLayer = {
+            program: terrainProgram,
+            buffer: foodBuffer,
+            texture: terrainTexture,
+            
+            draw() {
+                gl.useProgram(this.program);
+                setCamera(gl, this.program);
+
+                const posLoc = gl.getAttribLocation(this.program, "position");
+                const samplerLoc = gl.getUniformLocation(this.program, "terrainmap");
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+                gl.enableVertexAttribArray(posLoc);
+                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.texture);
+                gl.uniform1i(samplerLoc, 0);
+                
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+        };
         const foodLayer = {
             program: createProgram(gl, foodmapVertexShaderSource, foodmapFragmentShaderSource),
             buffer: foodBuffer,
@@ -764,6 +850,33 @@
                 }
             }
         };
+
+        ///////////////////////////////////////////////////////////////////////////////////////
+        // Load Terrain Map
+        ///////////////////////////////////////////////////////////////////////////////////////
+        async function loadTerrainMap() {
+            try {
+                const response = await fetch("/terrain");
+                const buffer = await response.arrayBuffer();
+                const terrainData = new Uint8Array(buffer);
+                
+                console.log("Loaded terrain map with size:", terrainData.length);
+                
+                gl.bindTexture(gl.TEXTURE_2D, terrainTexture);
+                const rgbaData = new Uint8Array(terrainData.length * 4);
+                for (let i = 0; i < terrainData.length; i++) {
+                    const val = terrainData[i];    // 0 for grassland, 1 for swamp (or any value)
+                    rgbaData[i * 4] = val * 255;   // R
+                    rgbaData[i * 4 + 1] = 0;       // G
+                    rgbaData[i * 4 + 2] = 0;       // B
+                    rgbaData[i * 4 + 3] = 255;     // A
+                }
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, worldWidth / SCALE, worldHeight / SCALE, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgbaData);
+                render();
+            } catch (error) {
+                console.error("Failed to load terrain map:", error);
+            }
+        }
 
         ///////////////////////////////////////////////////////////////////////////////////////
         // Stats per classic webservice
@@ -984,6 +1097,7 @@
         updateTPSDisplay();
         updateButtonStates();
         loadSimParams();
+        loadTerrainMap();
 
         // Check for #admin in URL to show control panel
         if (window.location.hash === '#admin') {
