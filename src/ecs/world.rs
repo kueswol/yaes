@@ -15,8 +15,9 @@ pub struct World {
     params: SimParams,
     rng: rand::rngs::StdRng,        // the world wide root of all "randomness"
     spatial_map: SpatialHashmap,
-    pub foodmap: Vec<u8>,
+    pub terrain_map: Vec<u8>,
     fertility_map: Vec<u8>,
+    pub food_map: Vec<u8>,
 
     // statistics
     pub tick_counter: u64,
@@ -72,10 +73,13 @@ impl World {
     pub fn new(rng_seed: u64) -> Self {
         let mut rng = StdRng::seed_from_u64(rng_seed);
 
-        let mut foodmap: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
-        Self::create_foodmap(&mut foodmap, &mut rng);
+        let mut terrain_map: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
+        let mut fertility_map: Vec<u8> = vec![0;(c::WORLD_WIDTH * c::WORLD_HEIGHT) as usize];
         
-        let fertility_map = foodmap.clone();
+        Self::create_map(&mut terrain_map, &mut fertility_map,&mut rng);
+        
+        let food_map = fertility_map.clone();
+
 
         Self {
             params: SimParams {
@@ -113,8 +117,9 @@ impl World {
                 },
             },
             rng,
-            foodmap,
+            terrain_map,
             fertility_map,
+            food_map,
             tick_counter: 0,
             seed: rng_seed,
             deaths: 0,
@@ -382,7 +387,7 @@ impl World {
         let brain_outputs = &self.brain_outputs;
         let ages = &self.ages;
         let tick_counter = &self.tick_counter;
-        let foodmap = &self.foodmap;
+        let food_map = &self.food_map;
         let max_speed = self.params.creature.speed_sprint;
 
         self.brain_inputs
@@ -432,13 +437,13 @@ impl World {
                 ) << 15;
 
                 // can eat (is there food at the current position?)
-                *input |= ((foodmap[(pos.y as usize).clamp(0,c::WORLD_HEIGHT as usize - 1) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,c::WORLD_WIDTH as usize - 1)] > 0) as u64) << 18;
+                *input |= ((food_map[(pos.y as usize).clamp(0,c::WORLD_HEIGHT as usize - 1) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,c::WORLD_WIDTH as usize - 1)] > 0) as u64) << 18;
                 
                 // are we facing the border;
                 *input |= (Self::check_border_ahead(pos, orientations[entity_id], max_speed) as u64) << 19;
 
                 // food ahead! we can check the 3 tiles ahead in a cone, and encode that information in 2 bits for more_food_ahead_left and more_food_ahead_right
-                let (food_ahead_left, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], foodmap, max_speed);
+                let (food_ahead_left, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], food_map, max_speed);
                 *input |= (food_ahead_left  as u64) << 20; // more_food_ahead_left
                 *input |= (food_ahead_right as u64) << 21; // more_food_ahead_right
 
@@ -586,14 +591,14 @@ impl World {
             std::mem::replace(&mut self.pending_eat, Vec::with_capacity(self.params.world.max_population));
         for (entity_id, _action) in pending_eat {
             let pos = &self.positions[entity_id];
-            let (has_food, index, food_amount) = Self::has_food(&self.foodmap, pos);
+            let (has_food, index, food_amount) = Self::has_food(&self.food_map, pos);
             if has_food {
                 let food_eaten = (self.params.energy.cost_eat.abs() as u8).min(food_amount); // we can only eat as much food as there is, and we want to eat at most the absolute value of the energy cost
-                self.foodmap[index] = self.foodmap[index].saturating_sub(food_eaten);
+                self.food_map[index] = self.food_map[index].saturating_sub(food_eaten);
                 let mut nutrition_value = (food_eaten as f32) * -1.0 * self.sizes[entity_id] * self.sizes[entity_id]; // bigger creatures get more nutrition out of the same amount of food
-                if pos.x >= c::BRAIN_INPUTS_BUCKET_POSX_C_R {
-                    
-                    nutrition_value *= 0.5;
+                
+                if self.terrain_map[index] == 1 { // it's a swamp
+                    nutrition_value *= 3.0;
                 }
                 self.pending_energy_costs.push((entity_id, nutrition_value)); // negative cost => energy gain
                 self.eat_success += 1;
@@ -633,9 +638,9 @@ impl World {
                     self.positions[*entity_id].x = new_x;
                     self.positions[*entity_id].y = new_y;
                     
-                    // if new_x >= c::WORLD_WIDTH as f32 / 2.0 {
-                    if new_x >= c::BRAIN_INPUTS_BUCKET_POSX_C_R {
-                        energy *= 3.0; // moving on the right side of the world is more costly
+                    
+                    if Self::get_biome(&self.terrain_map, &self.positions[*entity_id]) == 1 { // it's a swamp
+                        energy *= 3.0;
                     }
                     self.pending_energy_costs.push((*entity_id, energy));
                     
@@ -838,7 +843,7 @@ impl World {
     /******************************************************************************************************************************************/
     /// let the food spread and regrow
     fn grow_food(&mut self) {
-        let mut new_foodmap = self.foodmap.clone();
+        let mut new_foodmap = self.food_map.clone();
         let fertility_map = &self.fertility_map;
 
         new_foodmap.par_iter_mut().with_min_len(100).enumerate().for_each(|(index, cell)| {
@@ -855,7 +860,7 @@ impl World {
             //     *cell = cell.saturating_add(self.params.world.food_regrowth_amount);
             // }
         });
-        self.foodmap = new_foodmap;
+        self.food_map = new_foodmap;
     }
     /******************************************************************************************************************************************/
     /// update internal world statistics
@@ -866,7 +871,7 @@ impl World {
         let total_age: u64 = self.ages.iter().sum();
         self.avg_age = self.tick_counter as f32 - (total_age as f32 / self.creatures.len().max(1) as f32);
 
-        self.total_food = self.foodmap.par_iter().map(|&b| b as u64).sum();
+        self.total_food = self.food_map.par_iter().map(|&b| b as u64).sum();
     }
 }
 
@@ -920,13 +925,23 @@ impl World {
     /******************************************************************************************************************************************/
     /// checks if there's food at the current position
     #[inline(always)]
-    #[allow(dead_code)]
-    fn has_food(foodmap: &Vec<u8>, pos: &Coordinate) -> (bool, usize, u8) { // return whether there's food, the index in the foodmap and the amount of food
+    // #[allow(dead_code)]
+    fn has_food(food_map: &Vec<u8>, pos: &Coordinate) -> (bool, usize, u8) { // return whether there's food, the index in the food_map and the amount of food
         let x = (pos.x as usize).clamp(0,(c::WORLD_WIDTH  - 1) as usize);
         let y = (pos.y as usize).clamp(0,(c::WORLD_HEIGHT - 1) as usize);
         let index = y * (c::WORLD_WIDTH as usize) + x;
-        let has_food: bool = foodmap[index] > 0;
-        (has_food, index, foodmap[index])
+        let has_food: bool = food_map[index] > 0;
+        (has_food, index, food_map[index])
+    }
+
+    /******************************************************************************************************************************************/
+    /// returns the current biome
+    #[inline(always)]
+    fn get_biome(terrain_map: &Vec<u8>, pos: &Coordinate) -> u8 {
+        let x = (pos.x as usize).clamp(0, (c::WORLD_WIDTH - 1) as usize);
+        let y = (pos.y as usize).clamp(0, (c::WORLD_HEIGHT - 1) as usize);
+        let index = y * (c::WORLD_WIDTH as usize) + x;
+        terrain_map[index]
     }
 
     /******************************************************************************************************************************************/
@@ -941,7 +956,7 @@ impl World {
     /******************************************************************************************************************************************/
     /// check whether there's food ahead in the current direction
     #[inline(always)]
-    fn check_food_ahead(pos: &Coordinate, orientation: f32, foodmap: &Vec<u8>, max_speed: f32) -> (bool, bool) {
+    fn check_food_ahead(pos: &Coordinate, orientation: f32, food_map: &Vec<u8>, max_speed: f32) -> (bool, bool) {
         let look_ahead_distance = max_speed * 1.1; // 10% over the distance reachable with sprint
         // let look_ahead_x = pos.x + orientation.cos() * look_ahead_distance;
         // let look_ahead_y = pos.y + orientation.sin() * look_ahead_distance;
@@ -954,41 +969,73 @@ impl World {
         let right_cone_x = pos.x + right_cone_angle.cos() * look_ahead_distance;
         let right_cone_y = pos.y + right_cone_angle.sin() * look_ahead_distance;
 
-        let left_food  = Self::has_food(foodmap, &Coordinate { x: left_cone_x, y: left_cone_y }).0;
-        let right_food = Self::has_food(foodmap, &Coordinate { x: right_cone_x, y: right_cone_y }).0;
+        let left_food  = Self::has_food(food_map, &Coordinate { x: left_cone_x, y: left_cone_y }).0;
+        let right_food = Self::has_food(food_map, &Coordinate { x: right_cone_x, y: right_cone_y }).0;
 
         (left_food, right_food)
     }
 
     /******************************************************************************************************************************************/
-    /// check whether there's a border ahead in the current direction
+    /// create a map for biome structure and food-distribution
     #[inline(always)]
-    fn create_foodmap(foodmap: &mut Vec<u8>, rng: &mut StdRng) {
+    fn create_map(terrain_map: &mut Vec<u8>, fertility_map: &mut Vec<u8>, _rng: &mut StdRng) {
+        
         let mut hotspots: Vec<(Coordinate, f32)> = Vec::new();
         for _ in 0..20 {
             hotspots.push((Coordinate {
-                x: rng.gen_range(25.0..((c::WORLD_WIDTH  - 25) as f32)),
-                y: rng.gen_range(25.0..((c::WORLD_HEIGHT - 25) as f32)),
-            }, rng.gen_range(50.0..150.0)));
+                x: _rng.gen_range(25.0..((c::WORLD_WIDTH  - 25) as f32)),
+                y: _rng.gen_range(25.0..((c::WORLD_HEIGHT - 25) as f32)),
+            }, _rng.gen_range(50.0..125.0)));
         }
         
         for x in 0..c::WORLD_WIDTH {
             for y in 0..c::WORLD_HEIGHT {
-                let mut value: u8 = 0;
-                for (hotspot_pos, hotspot_strength) in &hotspots {
-                    let dx = x as f32 - hotspot_pos.x;
-                    let dy = y as f32 - hotspot_pos.y;
-                    let distance_sqr = dx * dx + dy * dy + 1.0; // add 1 to prevent division by zero
-                    value = value.saturating_add(((hotspot_strength * hotspot_strength) / distance_sqr).min(255.0) as u8);
+                // determine the biome
+                // let mut biome: u8 = 0;
+                let mut is_swamp = true;
+                let fx = x as f32;
+                let fy = y as f32;
+
+                let base = fx + fy;
+                let noise = 
+                    (fx * 0.15 + fy * 0.05).sin() * 10.0 +
+                    (fx * 0.4 - fy * 0.3).sin() * 4.0 +
+                    (fx * 0.8 + fy * 0.9).cos() * 2.0;
+                if base + noise > ((c::WORLD_HEIGHT + c::WORLD_WIDTH) as f32 / 2.0) {
+                    is_swamp = false;
                 }
+
+                // calculate fertility based on distance to hotspots and biome
+                let mut fertility: u8 = 0;
+                
+                let min_fertility: u8;
+                let max_fertility: u8;
+                let strength_factor: f32;
+
+                if is_swamp {
+                    min_fertility = 0;
+                    max_fertility = 255;
+                    strength_factor = 0.75;
+                } else {
+                    min_fertility = 50;
+                    max_fertility = 150;
+                    strength_factor = 1.25;
+                }
+
+                for (hotspot_pos, hotspot_strength) in &hotspots {
+                    let dx = fx - hotspot_pos.x;
+                    let dy = fy - hotspot_pos.y;
+                    let distance_sqr = dx * dx + dy * dy + 1.0; // add 1 to prevent division by zero
+                    let biome_strength_sqr = hotspot_strength * hotspot_strength * strength_factor * strength_factor;
+                    fertility = fertility.saturating_add((biome_strength_sqr / distance_sqr).min(255.0) as u8);
+                }
+                fertility = fertility.clamp(min_fertility, max_fertility);
+
                 let index: usize = (y as usize) * (c::WORLD_WIDTH as usize) + (x as usize);
-                foodmap[index] = value;
+                terrain_map[index] = if is_swamp { 0 } else { 1 };
+                fertility_map[index] = fertility;
             }
         }
-
-        // for i in 0..foodmap.len() {
-        //     foodmap[i] = rng.gen_range(0..=192);
-        // }
     }
 
 }

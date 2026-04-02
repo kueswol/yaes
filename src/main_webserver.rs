@@ -154,10 +154,10 @@ async fn handle_socket(
                 // every 50ms we send an update to the client
                 let mut buffer: Vec<u8>;
         
-                if msg_counter & 31_u64 == 0 {
+                if msg_counter & 15_u64 == 0 {
                     let food = {
                         let world = world.lock().unwrap();
-                        world.foodmap.clone()
+                        world.food_map.clone()
                     };
                     buffer = Vec::with_capacity(1 + food.len());
                     buffer.push(MSG_FOOD);
