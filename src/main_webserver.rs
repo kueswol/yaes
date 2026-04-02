@@ -23,6 +23,7 @@ pub async fn start_webserver(
         .route("/sim_params", get(sim_params))
         .route("/sim_params", post(update_sim_params))
         .route("/creature/{id}", get(creature_detail))
+        .route("/terrain", get(terrain_map))
         .route("/ws", get(ws_handler))
         .with_state((world, channel_web2sim_tx));
 
@@ -68,6 +69,19 @@ async fn creature_detail(
 ) -> Json<CreatureDetailView> {
     let world = world.lock().unwrap();
     Json(world.get_creature_detail_view(id))
+}
+
+/******************************************************************************************************************************************/
+/// route "/terrain"
+async fn terrain_map(
+    State((world, _channel_web2sim_sender)): State<(
+        Arc<Mutex<World>>,
+        std::sync::mpsc::Sender<ChannelWeb2SimMessage>,
+    )>,
+) -> axum::body::Body {
+    let world = world.lock().unwrap();
+    let terrain = world.terrain_map.clone();
+    axum::body::Body::from(axum::body::Bytes::from(terrain))
 }
 
 /******************************************************************************************************************************************/

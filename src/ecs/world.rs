@@ -369,14 +369,14 @@ impl World {
 
     /******************************************************************************************************************************************/
     /// update each creature's sensoric brain inputs
-    ///   [ 1] Energy low,              [ 2] Energy mid,              [ 3] Energy high,
-    ///   [ 4] PosX left,               [ 5] PosX center,             [ 6] PosX right,
-    ///   [ 7] PosY top,                [ 8] PosY center,             [ 9] PosY bottom,
-    ///   [10] LastAction Idle,         [11] LastAction Sleep,        [12] LastAction Move,
-    ///   [13] LastAction Eat,          [14] LastAction Reproduce,    [15] can_reproduce,
-    ///   [16] age low,                 [17] age mid,                 [18] age high,
-    ///   [19] can_eat,                 [20] border_ahead,            [21] more_food_ahead_left,
-    ///   [22] more_food_ahead_right,   [23] is_full (E >= 90%),      [24] unused
+    ///   [ 1] Energy low,                [ 2] Energy high,               [ 3] PosX left,
+    ///   [ 4] PosX right,                [ 5] PosY top,                  [ 6] PosY bottom,
+    ///   [ 7] heavy_terrain_ahead_left,  [ 8] heavy_terrain_ahead_right, [ 9] unused,
+    ///   [10] unused,                    [11] unused,                    [12] LastAction Move,
+    ///   [13] LastAction Eat,            [14] LastAction Reproduce,      [15] can_reproduce,
+    ///   [16] age mid,                   [17] age high,                  [18] unused,
+    ///   [19] can_eat,                   [20] border_ahead,              [21] more_food_ahead_left,
+    ///   [22] more_food_ahead_right,     [23] more food far ahead,       [24] is_full (E >= 90%)
     fn update_brain_inputs(&mut self) {
         // for each creature, gather sensory data and update brain_inputs
         let energies = &self.energies;
@@ -388,6 +388,7 @@ impl World {
         let ages = &self.ages;
         let tick_counter = &self.tick_counter;
         let food_map = &self.food_map;
+        let terrain_map = &self.terrain_map;
         let max_speed = self.params.creature.speed_sprint;
 
         self.brain_inputs
@@ -397,62 +398,74 @@ impl World {
             .for_each(move |(entity_id, input)| {
                 // reset input
                 *input = 0;
-                // energie low|mid|high
-                *input |= Self::encode_3bucket(
-                    energies[entity_id],
-                    [c::BRAIN_INPUTS_BUCKET_NRGY_LOW_MID, c::BRAIN_INPUTS_BUCKET_NRGY_MID_HIGH],
-                ) << 0;
+                
+                // #1 energie low
+                *input |= ((energies[entity_id] < c::BRAIN_INPUTS_BUCKET_NRGY_LOW_MID) as u64) << 0;
+                // #2 energie high
+                *input |= ((energies[entity_id] >= c::BRAIN_INPUTS_BUCKET_NRGY_MID_HIGH) as u64) << 1;
 
-                // pos.x left|center|right
                 let pos = &positions[entity_id];
-                *input |= Self::encode_3bucket(
-                    pos.x,
-                    [c::BRAIN_INPUTS_BUCKET_POSX_L_C, c::BRAIN_INPUTS_BUCKET_POSX_C_R],
-                ) << 3;
+                // #3 pos.x left
+                *input |= ((pos.x < (c::BRAIN_INPUTS_BUCKET_POSX_L_C as f32)) as u64) << 2;
+                // #4 pos.x right
+                *input |= ((pos.x > (c::BRAIN_INPUTS_BUCKET_POSX_C_R as f32)) as u64) << 3;
+                // #5 pos.y top
+                *input |= ((pos.y < (c::BRAIN_INPUTS_BUCKET_POSY_T_C as f32)) as u64) << 4;
+                // #6 pos.y bottom
+                *input |= ((pos.y > (c::BRAIN_INPUTS_BUCKET_POSY_C_B as f32)) as u64) << 5;
 
-                // pos.y top|center|bottom
-                *input |= Self::encode_3bucket(
-                    pos.y,
-                    [c::BRAIN_INPUTS_BUCKET_POSY_T_C, c::BRAIN_INPUTS_BUCKET_POSY_C_B],
-                ) << 6;
+                let (heavy_terrain_ahead_left, heavy_terrain_ahead_right) = Self::check_heavy_terrain_ahead(pos, orientations[entity_id], terrain_map, max_speed);
+                // #07 unused
+                *input |= (heavy_terrain_ahead_left as u64) << 6;
+                // #08 unused
+                *input |= (heavy_terrain_ahead_right as u64) << 7;
+                // #09 unused
+                // *input |= something else << 8;
+                // #10 unused
+                // *input |= something else << 9;
+                // #11 unused
+                // *input |= something else << 10;
 
                 // last action
                 let last_action = Self::decode_output(&brain_outputs[entity_id]).0;
-                *input |= ((last_action == CreatureAction::Idle) as u64) << 9;
-                *input |= ((last_action == CreatureAction::Sleep) as u64) << 10;
+                // #12 last action move
                 *input |= ((last_action == CreatureAction::Move) as u64) << 11;
+                // #13 last action eat
                 *input |= ((last_action == CreatureAction::Eat) as u64) << 12;
+                // #14 last action reproduce
                 *input |= ((last_action == CreatureAction::Reproduce) as u64) << 13;
 
-                // can reproduce
+                // #15 can reproduce
                 *input |= (((creatures[entity_id] & c::CREATURE_BITFLAG_CAN_REPRODUCE) != 0) as u64) << 14;
+                // #16 age mid
+                *input |= ((c::BRAIN_INPUTS_BUCKET_AGE_LOW_MID < (*tick_counter - ages[entity_id]) && (*tick_counter - ages[entity_id]) < c::BRAIN_INPUTS_BUCKET_AGE_MID_HIGH) as u64) << 15;
+                // #17 age high
+                *input |= (((*tick_counter - ages[entity_id]) >= c::BRAIN_INPUTS_BUCKET_AGE_MID_HIGH) as u64) << 16;
+                
+                // #18 unused
+                // *input |= something else << 17;
 
-                // age low|mid|high
-                *input |= Self::encode_3bucket(
-                    ((*tick_counter) - ages[entity_id]) as f32,
-                    [
-                        c::BRAIN_INPUTS_BUCKET_AGE_LOW_MID as f32,
-                        c::BRAIN_INPUTS_BUCKET_AGE_MID_HIGH as f32,
-                    ],
-                ) << 15;
-
-                // can eat (is there food at the current position?)
+                // #19 can eat (is there food at the current position?)
                 *input |= ((food_map[(pos.y as usize).clamp(0,c::WORLD_HEIGHT as usize - 1) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,c::WORLD_WIDTH as usize - 1)] > 0) as u64) << 18;
                 
-                // are we facing the border;
+                // #20 are we facing the border;
                 *input |= (Self::check_border_ahead(pos, orientations[entity_id], max_speed) as u64) << 19;
 
-                // food ahead! we can check the 3 tiles ahead in a cone, and encode that information in 2 bits for more_food_ahead_left and more_food_ahead_right
-                let (food_ahead_left, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], food_map, max_speed);
-                *input |= (food_ahead_left  as u64) << 20; // more_food_ahead_left
-                *input |= (food_ahead_right as u64) << 21; // more_food_ahead_right
+                // check food ahead! we can check the 3 tiles ahead in a cone, and encode that information in 2 bits for more_food_ahead_left and more_food_ahead_right
+                let (food_ahead_left, food_ahead_center, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], food_map, max_speed);
+                // #21 more food ahead left
+                *input |= (food_ahead_left  as u64) << 20;
+                // #22 more food ahead right
+                *input |= (food_ahead_right as u64) << 21;
+                // #23 more food far ahead (in the center)
+                *input |= (food_ahead_center as u64) << 22;
 
-                // 90% of max_energy reached
                 let max_energy = 90.0 + (sizes[entity_id] * 100.0);
-                *input |= ((energies[entity_id] >= max_energy * 0.9) as u64) << 22;
+                // #24 90% of max_energy reached
+                *input |= ((energies[entity_id] >= max_energy * 0.9) as u64) << 23;
+
         });
 
-        // *input |= something else << 23;
     }
 
     /******************************************************************************************************************************************/
@@ -843,16 +856,20 @@ impl World {
     /******************************************************************************************************************************************/
     /// let the food spread and regrow
     fn grow_food(&mut self) {
-        let mut new_foodmap = self.food_map.clone();
+        let mut new_food_map = self.food_map.clone();
         let fertility_map = &self.fertility_map;
+        let terrain_map = &self.terrain_map;
 
-        new_foodmap.par_iter_mut().with_min_len(100).enumerate().for_each(|(index, cell)| {
+        new_food_map.par_iter_mut().with_min_len(100).enumerate().for_each(|(index, cell)| {
             let fertility = fertility_map[index];
             if fertility == 0 { return; } // no food can grow here, so we skip
             
-            let max_food = fertility.saturating_add(self.params.world.food_regrowth_amount * 5);
+            let is_swamp = terrain_map[index] == 1;
+            let biome_factor = if is_swamp { 2 } else { 1 };
+
+            let max_food = fertility.saturating_add(self.params.world.food_regrowth_amount * 2);
             let regrowth = ((self.params.world.food_regrowth_amount as f32 * (fertility as f32 / 255.0)) as u8).max(1);
-            let new_val = cell.saturating_add(regrowth);
+            let new_val = cell.saturating_add(regrowth * biome_factor);
             
             *cell = new_val.min(max_food);
 
@@ -860,7 +877,7 @@ impl World {
             //     *cell = cell.saturating_add(self.params.world.food_regrowth_amount);
             // }
         });
-        self.food_map = new_foodmap;
+        self.food_map = new_food_map;
     }
     /******************************************************************************************************************************************/
     /// update internal world statistics
@@ -882,6 +899,7 @@ impl World {
     /******************************************************************************************************************************************/
     /// encodes a value into 3 buckets and returns a 3-bit representation as u64
     #[inline(always)]
+    #[allow(dead_code)]
     fn encode_3bucket(val: f32, buckets: [f32; 2]) -> u64 {
         let low = (val <= buckets[0]) as u64;
         let mid = ((val > buckets[0]) && (val <= buckets[1])) as u64;
@@ -954,10 +972,30 @@ impl World {
     }
 
     /******************************************************************************************************************************************/
-    /// check whether there's food ahead in the current direction
+    /// check whether there's heavy terrain ahead
     #[inline(always)]
-    fn check_food_ahead(pos: &Coordinate, orientation: f32, food_map: &Vec<u8>, max_speed: f32) -> (bool, bool) {
-        let look_ahead_distance = max_speed * 1.1; // 10% over the distance reachable with sprint
+    fn check_heavy_terrain_ahead(pos: &Coordinate, orientation: f32, terrain_map: &Vec<u8>, max_speed: f32) -> (bool, bool) {
+        let look_ahead_distance = max_speed * 2.0; // twice the distance reachable with sprint
+
+        let left_cone_angle  = orientation + std::f32::consts::FRAC_PI_4; // 45 degrees to the left
+        let right_cone_angle = orientation - std::f32::consts::FRAC_PI_4; // 45 degrees to the right
+
+        let left_cone_x  = pos.x + left_cone_angle.cos() * look_ahead_distance;
+        let left_cone_y  = pos.y + left_cone_angle.sin() * look_ahead_distance;
+        let right_cone_x = pos.x + right_cone_angle.cos() * look_ahead_distance;
+        let right_cone_y = pos.y + right_cone_angle.sin() * look_ahead_distance;
+
+        let left_terrain  = Self::get_biome(terrain_map, &Coordinate { x: left_cone_x , y: left_cone_y  }) == 1;
+        let right_terrain = Self::get_biome(terrain_map, &Coordinate { x: right_cone_x, y: right_cone_y }) == 1;
+
+        (left_terrain, right_terrain)
+    }
+
+    /******************************************************************************************************************************************/
+    /// check whether there's food ahead in the current direction (left, center, right)
+    #[inline(always)]
+    fn check_food_ahead(pos: &Coordinate, orientation: f32, food_map: &Vec<u8>, max_speed: f32) -> (bool, bool, bool) {
+        let look_ahead_distance = max_speed * 2.0; // 100% over the distance reachable with sprint
         // let look_ahead_x = pos.x + orientation.cos() * look_ahead_distance;
         // let look_ahead_y = pos.y + orientation.sin() * look_ahead_distance;
 
@@ -972,7 +1010,17 @@ impl World {
         let left_food  = Self::has_food(food_map, &Coordinate { x: left_cone_x, y: left_cone_y }).0;
         let right_food = Self::has_food(food_map, &Coordinate { x: right_cone_x, y: right_cone_y }).0;
 
-        (left_food, right_food)
+        // center will go far more ahead, but stops at the next food
+        let mut center_x = pos.x;
+        let mut center_y = pos.y;
+        for _ in 1..=10 {
+            center_x += orientation.cos() * look_ahead_distance;
+            center_y += orientation.sin() * look_ahead_distance;
+            if Self::has_food(food_map, &Coordinate { x: center_x, y: center_y }).0 {
+                return (left_food, true, right_food);
+            }
+        }
+        (left_food, false, right_food)
     }
 
     /******************************************************************************************************************************************/
@@ -992,7 +1040,7 @@ impl World {
             for y in 0..c::WORLD_HEIGHT {
                 // determine the biome
                 // let mut biome: u8 = 0;
-                let mut is_swamp = true;
+                let mut is_swamp = false;
                 let fx = x as f32;
                 let fy = y as f32;
 
@@ -1000,9 +1048,10 @@ impl World {
                 let noise = 
                     (fx * 0.15 + fy * 0.05).sin() * 10.0 +
                     (fx * 0.4 - fy * 0.3).sin() * 4.0 +
-                    (fx * 0.8 + fy * 0.9).cos() * 2.0;
+                    (fx * 0.8 + fy * 0.9).cos() * 3.0 -
+                    (fx * 0.01).sin() * 30.0;
                 if base + noise > ((c::WORLD_HEIGHT + c::WORLD_WIDTH) as f32 / 2.0) {
-                    is_swamp = false;
+                    is_swamp = true;
                 }
 
                 // calculate fertility based on distance to hotspots and biome
@@ -1015,7 +1064,7 @@ impl World {
                 if is_swamp {
                     min_fertility = 0;
                     max_fertility = 255;
-                    strength_factor = 0.75;
+                    strength_factor = 0.5;
                 } else {
                     min_fertility = 50;
                     max_fertility = 150;
@@ -1032,7 +1081,7 @@ impl World {
                 fertility = fertility.clamp(min_fertility, max_fertility);
 
                 let index: usize = (y as usize) * (c::WORLD_WIDTH as usize) + (x as usize);
-                terrain_map[index] = if is_swamp { 0 } else { 1 };
+                terrain_map[index] = if is_swamp { 1 } else { 0 };
                 fertility_map[index] = fertility;
             }
         }
