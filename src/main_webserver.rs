@@ -130,6 +130,7 @@ async fn handle_socket(
 ) {
     const MSG_CREATURES: u8 = 1;
     const MSG_FOOD: u8 = 2;
+    const MSG_DEAD_CREATURES: u8 = 3;
     let mut msg_counter: u64 = 0;
 
     loop {
@@ -177,7 +178,8 @@ async fn handle_socket(
                     buffer.push(MSG_FOOD);
                     buffer.extend_from_slice(&food);
                     msg_counter = 1; // reset to 1 to avoid overflow and to ensure that the next message is a creatures update
-                } else {
+                }
+                else if msg_counter & 0b1 == 1 {
                     let creatures = {
                         let world = world.lock().unwrap();
                         world
@@ -205,6 +207,31 @@ async fn handle_socket(
                         buffer.push(c.color[1]);
                         buffer.push(c.color[2]);
                         buffer.extend_from_slice(&(c.orientation as f32).to_le_bytes());
+                    }
+                    msg_counter += 1;
+                }
+                else {
+                    let dead_creatures = {
+                        let world = world.lock().unwrap();
+                        world
+                            .get_dead_creatures_view()
+                            .into_iter()
+                            .take(50000)
+                            .collect::<Vec<_>>() // limit to 50k dead creatures for performance
+                    };
+        
+                    // "* 16" because each dead creature has the following fields:
+                    // - f32 `x` --> 4 Bytes
+                    // - f32 `y` --> 4 Bytes
+                    // - f32 `orientation` --> 4 Bytes
+                    // - f32 `size` --> 4 Bytes
+                    buffer = Vec::with_capacity(1 + dead_creatures.len() * 16);
+                    buffer.push(MSG_DEAD_CREATURES);
+                    for c in dead_creatures.iter() {
+                        buffer.extend_from_slice(&(c.x as f32).to_le_bytes());
+                        buffer.extend_from_slice(&(c.y as f32).to_le_bytes());
+                        buffer.extend_from_slice(&(c.orientation as f32).to_le_bytes());
+                        buffer.extend_from_slice(&(c.size as f32).to_le_bytes());
                     }
                     msg_counter += 1;
                 }

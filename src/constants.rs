@@ -9,14 +9,14 @@ pub const RNG_WORLD_SEED                : u64   = 42;
 /// WORLD
 /// ---------------------------------------------------------------------------------------------------------
 
-pub const MAX_POPULATION                : usize = 10_000;
-pub const MIN_POPULATION                : usize =  20;
-pub const WORLD_WIDTH                   : u32   = 300;
-pub const WORLD_HEIGHT                  : u32   = 300;
-pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   =   5;   // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT
+pub const MAX_POPULATION                : usize = 5_000;
+pub const MIN_POPULATION                : usize =    20;
+pub const WORLD_WIDTH                   : u32   =   300;
+pub const WORLD_HEIGHT                  : u32   =   300;
+pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   =     3; // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT
 
-pub const FOOD_REGROWTH_TICKS           : u64   = 255; // should be `(2^n) - 1`, so 3, 7, 15, 31, etc
-pub const FOOD_REGROWTH_AMOUNT          : u8    =   3; // primefactors of 255 would be 3, 5, 17   
+pub const FOOD_REGROWTH_TICKS           : u64   =   255; // should be `(2^n) - 1`, so 3, 7, 15, 31, etc
+pub const FOOD_REGROWTH_AMOUNT          : u8    =     3; // primefactors of 255 would be 3, 5, 17   
 
 /// ---------------------------------------------------------------------------------------------------------
 /// CREATURE
@@ -24,21 +24,21 @@ pub const FOOD_REGROWTH_AMOUNT          : u8    =   3; // primefactors of 255 wo
 
 pub const ENERGY_COST_EAT                  : f32   = -15.0;
 pub const ENERGY_COST_SLEEP                : f32   =  -1.0;
-pub const ENERGY_COST_REPRODUCE            : f32   =  67.0; // with 33 we get a blob only spawning
+pub const ENERGY_COST_REPRODUCE            : f32   =  67.0;
 pub const ENERGY_COST_MOVE_SLOWLY          : f32   =   0.1;
 pub const ENERGY_COST_MOVE_NORMAL          : f32   =   0.2;
 pub const ENERGY_COST_MOVE_SPRINT          : f32   =   0.4;
 pub const ENERGY_COST_FIRED_NEURON         : f32   =   0.005;
 pub const ENERGY_COST_IDLE                 : f32   =  10.0;
 
-pub const REPRODUCE_AGE_MIN                : u64   =  1_500; // at 25tps that's 5 minutes of life
-// pub const REPRODUCE_AGE_MIN                : u64   =  7_500; // at 25tps that's 5 minutes of life
+// pub const REPRODUCE_AGE_MIN                : u64   =  1_500; // at 25tps that's 5 minutes of life
+pub const REPRODUCE_AGE_MIN                : u64   =  7_500; // at 25tps that's 5 minutes of life
 pub const REPRODUCE_AGE_MAX                : u64   = 82_500; // at 25tps that's 55 minutes of life
 pub const CREATURE_MAX_AGE                 : u64   = 90_000;  // at 25tps that's 1 hour of life
 
-pub const CREATURE_SPEED_CREEP             : f32   =  0.01; // Base Speed - will be divided by size
-pub const CREATURE_SPEED                   : f32   =  0.02; // Base Speed - will be divided by size
-pub const CREATURE_SPEED_SPRINT            : f32   =  0.03; // Base Speed - will be divided by size
+pub const CREATURE_SPEED_CREEP             : f32   =  0.04; // Base Speed - will be divided by size
+pub const CREATURE_SPEED                   : f32   =  0.08; // Base Speed - will be divided by size
+pub const CREATURE_SPEED_SPRINT            : f32   =  0.12; // Base Speed - will be divided by size
 
 pub const CREATURE_BITFLAG_IS_ALIVE        : u8    = 0b0000_0001;
 pub const CREATURE_BITFLAG_CAN_REPRODUCE   : u8    = 0b0000_0010;
@@ -52,7 +52,7 @@ pub const MUTATE_CHANCE_CHANGE_THRESHOLD   : f64   = 0.55;
 pub const MUTATE_CHANCE_CHANGE_TARGET_BIT  : f64   = 0.05;
 pub const MUTATE_CHANCE_GAINING_NEW_NEURON : f64   = 0.002;
 pub const MUTATE_CHANCE_LOOSING_NEW_NEURON : f64   = 0.002;
-pub const MUTATE_CHANCE_MUTATE_LOOKS       : f64   = 0.10;
+pub const MUTATE_CHANCE_MUTATE_LOOKS       : f64   = 0.33;
 
 /// ---------------------------------------------------------------------------------------------------------
 /// BRAIN
@@ -66,7 +66,7 @@ pub const OUTPUT_FIRED_NEURONS_MASK        : u64   = 0b00000000_00000000_1111111
 pub const BRAIN_INPUTS_BUCKET_NRGY_LOW_MID : f32   =  67.0;
 pub const BRAIN_INPUTS_BUCKET_NRGY_MID_HIGH: f32   =  80.0;
 
-pub const BRAIN_INPUTS_BUCKET_AGE_LOW_MID  : u64   =  8_000;
+pub const BRAIN_INPUTS_BUCKET_AGE_LOW_MID  : u64   =  7_500;
 pub const BRAIN_INPUTS_BUCKET_AGE_MID_HIGH : u64   = 82_500;
 
 pub const BRAIN_INPUTS_BUCKET_POSX_L_C     : f32   =   20.0;

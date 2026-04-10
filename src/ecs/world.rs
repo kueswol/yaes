@@ -40,7 +40,9 @@ pub struct World {
     ///    0b0001 = exists/alive
     ///    0b0010 = can_reproduce
     creatures: Vec<u8>,
-    
+    /// pos,orientation,size
+    dead_creatures: Vec<(Coordinate,f32,f32)>,
+
     // light components
     positions: Vec<Coordinate>,
     orientations: Vec<f32>,
@@ -136,6 +138,7 @@ impl World {
             next_creature_id: 0,
             spatial_map: SpatialHashmap::new(),
             creatures: Vec::with_capacity(c::MAX_POPULATION),
+            dead_creatures: Vec::with_capacity(c::MAX_POPULATION),
             positions: Vec::with_capacity(c::MAX_POPULATION),
             orientations: Vec::with_capacity(c::MAX_POPULATION),
             energies: Vec::with_capacity(c::MAX_POPULATION),
@@ -161,10 +164,12 @@ impl World {
     pub fn tick(&mut self) {
         
         if self.creatures.len() < self.params.world.min_population {
-            let center_x: f32 = c::WORLD_WIDTH as f32 / 2.0;
-            let center_y: f32 = c::WORLD_HEIGHT as f32 / 2.0;
-            let rng_x = self.rng.gen_range((center_x - 10.0)..(center_x + 10.0));
-            let rng_y = self.rng.gen_range((center_y - 10.0)..(center_y + 10.0));
+            // let center_x: f32 = c::WORLD_WIDTH as f32 / 2.0;
+            // let center_y: f32 = c::WORLD_HEIGHT as f32 / 2.0;
+            // let rng_x = self.rng.gen_range((center_x - 10.0)..(center_x + 10.0));
+            // let rng_y = self.rng.gen_range((center_y - 10.0)..(center_y + 10.0));
+            let rng_x = self.rng.gen_range(10.0..30.0);
+            let rng_y = self.rng.gen_range(10.0..30.0);
             self.spawn_creature(None, Some(Coordinate { x: rng_x, y: rng_y }));
             // self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
         }
@@ -181,7 +186,7 @@ impl World {
         self.handle_age_events();
         self.handle_deaths();
         self.update_spatial_map();
-        // self.handle_separation();
+        self.handle_separation();
 
         if self.tick_counter & self.params.world.food_regrowth_ticks == 0 {
             self.grow_food();
@@ -211,14 +216,27 @@ impl World {
         let new_creature_brain_input: u64 = 0;
         let new_creature_brain_output: u64 = 0;
 
-        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(256, &mut self.rng)); // we had with 384 bytes
+        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(512, &mut self.rng)); // we had 256 bytes which work out good
         let new_creature_genome: Genome = Genome::from_dna(&new_creature_dna);
         let new_creature_brain: Brain = Brain::recompile(&new_creature_genome);
         let new_size: f32 = 0.1 + (0.9 * (new_creature_dna.bytes[0] as f32 / 255.0)); // size between 0.1 and 1.0 based on a dna byte
+        
+        let gene_values_kind: Vec<f64> = new_creature_dna.bytes.chunks_exact(8).skip(9)
+            .map(|chunk| chunk[5] as f64).collect();
+        let gene_values_threshold: Vec<f64> = new_creature_dna.bytes.chunks_exact(8).skip(9)
+            .map(|chunk| chunk[6] as f64).collect();
+        let gene_values_targetbit: Vec<f64> = new_creature_dna.bytes.chunks_exact(8).skip(9)
+            .map(|chunk| chunk[7] as f64).collect();
+        
+        // let new_creature_color: [u8; 3] = [
+        //     new_creature_dna.bytes[1],
+        //     new_creature_dna.bytes[2],
+        //     new_creature_dna.bytes[3]
+        // ];
         let new_creature_color: [u8; 3] = [
-            new_creature_dna.bytes[1],
-            new_creature_dna.bytes[2],
-            new_creature_dna.bytes[3]
+            (gene_values_kind.iter().sum::<f64>() % 256.0) as u8,
+            (gene_values_threshold.iter().sum::<f64>() * 2.0 % 256.0) as u8,
+            (gene_values_targetbit.iter().sum::<f64>() * 3.5 % 256.0) as u8
         ];
         let new_creature_reproduce_cooldown: u64 = self.tick_counter + self.params.creature.reproduce_age_min - 10 + (self.rng.gen_range(0..20));
 
@@ -242,6 +260,17 @@ impl World {
     /******************************************************************************************************************************************/
     /// Delete a creature
     pub fn delete_creature(&mut self, id: usize) {
+        
+        if self.dead_creatures.len() > self.params.world.max_population - 10 {
+            for i in 0..10 {
+                self.dead_creatures.swap_remove(i);
+            }
+        }
+        let pos = self.positions[id];
+        let orientation = self.orientations[id];
+        let size = self.sizes[id];
+        self.dead_creatures.push((pos, orientation, size));
+
         self.creatures.swap_remove(id);
         self.positions.swap_remove(id);
         self.orientations.swap_remove(id);
@@ -334,6 +363,23 @@ impl World {
     }
     
     /******************************************************************************************************************************************/
+    /// export a view of the dead creatures for the webserver
+    pub fn get_dead_creatures_view(&self) -> Vec<DeadCreatureView> {
+
+        let mut result = Vec::with_capacity(self.dead_creatures.len());
+        for (pos,orientation,size) in self.dead_creatures.iter() {
+            result.push(DeadCreatureView {
+                x: pos.x as f32,
+                y: pos.y as f32,
+                orientation: *orientation,
+                size: *size,
+            });
+        }
+
+        result
+    }
+    
+    /******************************************************************************************************************************************/
     /// export a view of the creatures for the webserver
     pub fn get_creature_detail_view(&self, id: usize) -> CreatureDetailView {
         if id >= self.creatures.len() {
@@ -389,6 +435,7 @@ impl World {
         let tick_counter = &self.tick_counter;
         let food_map = &self.food_map;
         let terrain_map = &self.terrain_map;
+        let spatial_map = &self.spatial_map;
         let max_speed = self.params.creature.speed_sprint;
 
         self.brain_inputs
@@ -415,9 +462,9 @@ impl World {
                 *input |= ((pos.y > (c::BRAIN_INPUTS_BUCKET_POSY_C_B as f32)) as u64) << 5;
 
                 let (heavy_terrain_ahead_left, heavy_terrain_ahead_right) = Self::check_heavy_terrain_ahead(pos, orientations[entity_id], terrain_map, max_speed);
-                // #07 unused
+                // #07 heavy_terrain_ahead_left
                 *input |= (heavy_terrain_ahead_left as u64) << 6;
-                // #08 unused
+                // #08 heavy_terrain_ahead_right
                 *input |= (heavy_terrain_ahead_right as u64) << 7;
                 // #09 unused
                 // *input |= something else << 8;
@@ -442,8 +489,8 @@ impl World {
                 // #17 age high
                 *input |= (((*tick_counter - ages[entity_id]) >= c::BRAIN_INPUTS_BUCKET_AGE_MID_HIGH) as u64) << 16;
                 
-                // #18 unused
-                // *input |= something else << 17;
+                // #18 others nearby (are there other creatures in the 8 surrounding tiles?)
+                *input |= ((spatial_map.get_creatures_in_cell_with_neighbors(*pos).len() > 0) as u64) << 17;
 
                 // #19 can eat (is there food at the current position?)
                 *input |= ((food_map[(pos.y as usize).clamp(0,c::WORLD_HEIGHT as usize - 1) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,c::WORLD_WIDTH as usize - 1)] > 0) as u64) << 18;
@@ -613,6 +660,7 @@ impl World {
                 if self.terrain_map[index] == 1 { // it's a swamp
                     nutrition_value *= 3.0;
                 }
+                nutrition_value *= 1.0 + (self.spatial_map.get_creatures_in_cell_with_neighbors(*pos).len() as f32 * 0.1);
                 self.pending_energy_costs.push((entity_id, nutrition_value)); // negative cost => energy gain
                 self.eat_success += 1;
                 continue;
@@ -811,42 +859,51 @@ impl World {
     #[allow(dead_code)]
     fn handle_separation(&mut self) {
         // collect adjustments locally as we shouldn't apply them immediately in the parallel loop
-        let mut position_adjustments: Vec<(usize, f32, f32)> = vec![(0, 0.0, 0.0); self.creatures.len()];
-        
-        position_adjustments.par_iter_mut().with_min_len(100).enumerate().for_each(|(id, adjustment)| {
-            let pos = self.positions[id];
-            let size = self.sizes[id];
-            let neighbors = self.spatial_map.get_creatures_in_cell(pos);
-            
-            for &other_id in &neighbors {
-                if id >= other_id { continue; } // prevent double checking pairs and self-checking
+        let position_adjustments: Vec<(usize, f32, f32)> = (0..self.creatures.len())
+            .into_par_iter()
+            .with_min_len(100)
+            .filter_map(|id| {
+                let mut dx = 0.0;
+                let mut dy = 0.0;
                 
-                let other_pos = self.positions[other_id];
-                let other_size = self.sizes[other_id];
-                let dx = pos.x - other_pos.x;
-                let dy = pos.y - other_pos.y;
-                let distance_sqr = dx * dx + dy * dy;
-                let min_distance = (size + other_size) as f32;
-                let min_distance_sqr = min_distance * min_distance;
+                let pos = self.positions[id];
+                let size = self.sizes[id];
+                let neighbors = self.spatial_map.get_creatures_in_cell_with_neighbors(pos);
                 
-                if distance_sqr >= min_distance_sqr || distance_sqr == 0.0 { continue; }
+                for &other_id in &neighbors {
+                    if id >= other_id { continue; }
+                    
+                    let other_pos = self.positions[other_id];
+                    let other_size = self.sizes[other_id];
+                    let dx_raw = pos.x - other_pos.x;
+                    let dy_raw = pos.y - other_pos.y;
+                    let distance_sqr = dx_raw * dx_raw + dy_raw * dy_raw;
+                    let min_distance = (size + other_size) as f32;
+                    let min_distance_sqr = min_distance * min_distance;
+                    
+                    if distance_sqr >= min_distance_sqr || distance_sqr == 0.0 { continue; }
+                    
+                    let distance = distance_sqr.sqrt();
+                    let overlap = min_distance - distance;
+                    let nx = dx_raw / distance;
+                    let ny = dy_raw / distance;
+                    
+                    dx += nx * overlap / 2.0;
+                    dy += ny * overlap / 2.0;
+                }
                 
-                let distance = distance_sqr.sqrt();
-                let overlap = min_distance - distance;
-                let nx = dx / distance;
-                let ny = dy / distance;
-                let half_overlap = overlap / 2.0;
-                
-                adjustment.0 = id;
-                adjustment.1 += nx * half_overlap;
-                adjustment.2 += ny * half_overlap;
-                
+                if dx != 0.0 || dy != 0.0 {
+                    Some((id, dx, dy))
+                } else {
+                    None
+                }
             }
-        });
+        )
+        .collect();
         
         // apply the collected adjustments
         for (id, dx, dy) in position_adjustments {
-            if id != 0 || dx != 0.0 || dy != 0.0 {
+            if dx != 0.0 || dy != 0.0 {
                 self.positions[id].x = (self.positions[id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
                 self.positions[id].y = (self.positions[id].y + dy).clamp(0.0, c::WORLD_HEIGHT as f32);
             }
@@ -975,7 +1032,7 @@ impl World {
     /// check whether there's heavy terrain ahead
     #[inline(always)]
     fn check_heavy_terrain_ahead(pos: &Coordinate, orientation: f32, terrain_map: &Vec<u8>, max_speed: f32) -> (bool, bool) {
-        let look_ahead_distance = max_speed * 2.0; // twice the distance reachable with sprint
+        let look_ahead_distance = (max_speed * 2.0).max(1.1415) * 1.5; // twice the distance reachable with sprint
 
         let left_cone_angle  = orientation + std::f32::consts::FRAC_PI_4; // 45 degrees to the left
         let right_cone_angle = orientation - std::f32::consts::FRAC_PI_4; // 45 degrees to the right
@@ -995,7 +1052,7 @@ impl World {
     /// check whether there's food ahead in the current direction (left, center, right)
     #[inline(always)]
     fn check_food_ahead(pos: &Coordinate, orientation: f32, food_map: &Vec<u8>, max_speed: f32) -> (bool, bool, bool) {
-        let look_ahead_distance = max_speed * 2.0; // 100% over the distance reachable with sprint
+        let look_ahead_distance = (max_speed * 2.0).max(1.1415); // 100% over the distance reachable with sprint, or at least 1.1415
         // let look_ahead_x = pos.x + orientation.cos() * look_ahead_distance;
         // let look_ahead_y = pos.y + orientation.sin() * look_ahead_distance;
 
@@ -1013,7 +1070,7 @@ impl World {
         // center will go far more ahead, but stops at the next food
         let mut center_x = pos.x;
         let mut center_y = pos.y;
-        for _ in 1..=10 {
+        for _ in 1..=20 {
             center_x += orientation.cos() * look_ahead_distance;
             center_y += orientation.sin() * look_ahead_distance;
             if Self::has_food(food_map, &Coordinate { x: center_x, y: center_y }).0 {
@@ -1067,7 +1124,7 @@ impl World {
                     strength_factor = 0.5;
                 } else {
                     min_fertility = 50;
-                    max_fertility = 150;
+                    max_fertility = 100;
                     strength_factor = 1.25;
                 }
 

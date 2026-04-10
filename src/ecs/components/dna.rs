@@ -93,8 +93,8 @@ impl Dna {
         // we can mutate them by randomly increasing or decreasing their value by 1, to create small variations in looks
         for byte in &mut self.bytes.iter_mut().take(8) {
             if rng.gen_bool(mutation_params.chance_mutate_looks) {
-                if rng.gen_bool(0.5) { *byte = byte.saturating_add(1); }
-                else                 { *byte = byte.saturating_sub(1); }
+                if rng.gen_bool(0.5) { *byte = byte.saturating_add(rng.gen_range(1..=3)); }
+                else                 { *byte = byte.saturating_sub(rng.gen_range(1..=3)); }
             }
         }
 

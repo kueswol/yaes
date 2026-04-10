@@ -16,6 +16,14 @@ pub struct CreatureView {
 }
 
 #[derive(Serialize)]
+pub struct DeadCreatureView {
+    pub x: f32,
+    pub y: f32,
+    pub orientation: f32,
+    pub size: f32,
+}
+
+#[derive(Serialize)]
 pub struct CreatureDetailView {
     pub id: usize,
     pub energy: f32,
