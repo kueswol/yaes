@@ -9,8 +9,9 @@ pub const RNG_WORLD_SEED                : u64   = 42;
 /// WORLD
 /// ---------------------------------------------------------------------------------------------------------
 
-pub const MAX_POPULATION                : usize = 5_000;
-pub const MIN_POPULATION                : usize =    20;
+pub const MAX_POPULATION                : usize = 10_000;
+pub const MIN_POPULATION_HERBIVORE      : usize =   200;
+pub const MIN_POPULATION_CARNIVORE      : usize =     0;
 pub const WORLD_WIDTH                   : u32   =   300;
 pub const WORLD_HEIGHT                  : u32   =   300;
 pub const SPATIAL_HASHMAP_CELL_SIZE     : u32   =     3; // must be a divisor of WORLD_WIDTH and WORLD_HEIGHT
@@ -26,7 +27,7 @@ pub const ENERGY_COST_EAT                  : f32   = -15.0;
 pub const ENERGY_COST_SLEEP                : f32   =  -1.0;
 pub const ENERGY_COST_REPRODUCE            : f32   =  67.0;
 pub const ENERGY_COST_MOVE_SLOWLY          : f32   =   0.1;
-pub const ENERGY_COST_MOVE_NORMAL          : f32   =   0.2;
+pub const ENERGY_COST_MOVE_NORMAL          : f32   =   0.2; 
 pub const ENERGY_COST_MOVE_SPRINT          : f32   =   0.4;
 pub const ENERGY_COST_FIRED_NEURON         : f32   =   0.005;
 pub const ENERGY_COST_IDLE                 : f32   =  10.0;
@@ -42,6 +43,8 @@ pub const CREATURE_SPEED_SPRINT            : f32   =  0.12; // Base Speed - will
 
 pub const CREATURE_BITFLAG_IS_ALIVE        : u8    = 0b0000_0001;
 pub const CREATURE_BITFLAG_CAN_REPRODUCE   : u8    = 0b0000_0010;
+pub const CREATURE_BITFLAG_IS_HERBIVORE    : u8    = 0b0000_0100;
+pub const CREATURE_BITFLAG_IS_CARNIVORE    : u8    = 0b0000_1000;
 
 /// ---------------------------------------------------------------------------------------------------------
 /// MUTATION

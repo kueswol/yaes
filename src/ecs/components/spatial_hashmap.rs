@@ -21,12 +21,12 @@ impl SpatialHashmap {
         let index = self.get_cell_index(position);
         self.cells[index].push(creature_id);
     }
-    // pub fn remove(&mut self, creature_id: usize, position: Coordinate) {
-    //     let index = self.get_cell_index(position);
-    //     if let Some(pos) = self.cells[index].iter().position(|&id| id == creature_id) {
-    //         self.cells[index].remove(pos);
-    //     }
-    // }
+    pub fn remove(&mut self, creature_id: usize, position: Coordinate) {
+        let index = self.get_cell_index(position);
+        if let Some(pos) = self.cells[index].iter().position(|&id| id == creature_id) {
+            self.cells[index].remove(pos);
+        }
+    }
 
     #[inline(always)]
     pub fn get_cell_index(&self, position: Coordinate) -> usize {
@@ -63,7 +63,7 @@ impl SpatialHashmap {
             if position.y < (c::WORLD_HEIGHT - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 { indexes.push(indexes[0] + self.cell_count_x - 1); }
         }
         // the right ones, if we're far enough away from the right border
-        if position.x <= (c::WORLD_WIDTH - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 {
+        if position.x < (c::WORLD_WIDTH - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 {
             // top right
             if position.y >= c::SPATIAL_HASHMAP_CELL_SIZE as f32 { indexes.push(indexes[0] - self.cell_count_x + 1); }
             // right
