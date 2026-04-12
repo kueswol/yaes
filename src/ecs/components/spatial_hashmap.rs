@@ -21,17 +21,17 @@ impl SpatialHashmap {
         let index = self.get_cell_index(position);
         self.cells[index].push(creature_id);
     }
-    // pub fn remove(&mut self, creature_id: usize, position: Coordinate) {
-    //     let index = self.get_cell_index(position);
-    //     if let Some(pos) = self.cells[index].iter().position(|&id| id == creature_id) {
-    //         self.cells[index].remove(pos);
-    //     }
-    // }
+    pub fn remove(&mut self, creature_id: usize, position: Coordinate) {
+        let index = self.get_cell_index(position);
+        if let Some(pos) = self.cells[index].iter().position(|&id| id == creature_id) {
+            self.cells[index].remove(pos);
+        }
+    }
 
     #[inline(always)]
     pub fn get_cell_index(&self, position: Coordinate) -> usize {
-        let grid_width = (c::WORLD_WIDTH / c::SPATIAL_HASHMAP_CELL_SIZE) as usize;  // 20
-        let grid_height = (c::WORLD_HEIGHT / c::SPATIAL_HASHMAP_CELL_SIZE) as usize;  // 20 (falls du es brauchst)
+        let grid_width = (c::WORLD_WIDTH / c::SPATIAL_HASHMAP_CELL_SIZE) as usize;
+        let grid_height = (c::WORLD_HEIGHT / c::SPATIAL_HASHMAP_CELL_SIZE) as usize;
 
         let x_index = (position.x as usize / c::SPATIAL_HASHMAP_CELL_SIZE  as usize).min(grid_width - 1);
         let y_index = (position.y as usize / c::SPATIAL_HASHMAP_CELL_SIZE  as usize).min(grid_height - 1);
@@ -60,21 +60,21 @@ impl SpatialHashmap {
             // left
             indexes.push(indexes[0] - 1);
             // bottom left
-            if position.y <= (c::WORLD_HEIGHT - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 { indexes.push(indexes[0] + self.cell_count_x - 1); }
+            if position.y < (c::WORLD_HEIGHT - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 { indexes.push(indexes[0] + self.cell_count_x - 1); }
         }
         // the right ones, if we're far enough away from the right border
-        if position.x <= (c::WORLD_WIDTH - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 {
+        if position.x < (c::WORLD_WIDTH - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 {
             // top right
             if position.y >= c::SPATIAL_HASHMAP_CELL_SIZE as f32 { indexes.push(indexes[0] - self.cell_count_x + 1); }
             // right
             indexes.push(indexes[0] + 1);
             // bottom right
-            if position.y <= (c::WORLD_HEIGHT - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 {indexes.push(indexes[0] + self.cell_count_x + 1); }
+            if position.y < (c::WORLD_HEIGHT - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 {indexes.push(indexes[0] + self.cell_count_x + 1); }
         }
         // the top one, if we're far enough away from the top border
         if position.y >= c::SPATIAL_HASHMAP_CELL_SIZE as f32 {indexes.push(indexes[0] - self.cell_count_x); }
         // the bottom one, if we're far enough away from the bottom border
-        if position.y <= (c::WORLD_HEIGHT - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 { indexes.push(indexes[0] + self.cell_count_x); }
+        if position.y < (c::WORLD_HEIGHT - c::SPATIAL_HASHMAP_CELL_SIZE) as f32 { indexes.push(indexes[0] + self.cell_count_x); }
         
         indexes.sort_unstable();
         indexes.dedup();

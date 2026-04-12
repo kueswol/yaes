@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use crate::{
     constants as c,
     ecs::components::*,
@@ -15,6 +17,7 @@ pub struct World {
     params: SimParams,
     rng: rand::rngs::StdRng,        // the world wide root of all "randomness"
     spatial_map: SpatialHashmap,
+    carrion_map: SpatialHashmap,
     pub terrain_map: Vec<u8>,
     fertility_map: Vec<u8>,
     pub food_map: Vec<u8>,
@@ -24,8 +27,10 @@ pub struct World {
     pub seed: u64,
     pub deaths: u64,
     pub births: u64,
-    pub eat_success: u64,
-    pub eat_failed: u64,
+    pub herbivore_eat_success: u64,
+    pub herbivore_eat_failed: u64,
+    pub carnivore_eat_success: u64,
+    pub carnivore_eat_failed: u64,
     pub reproduce_success: u64,
     pub reproduce_failed_age: u64,
     pub reproduce_failed_energy: u64,
@@ -33,14 +38,20 @@ pub struct World {
     pub avg_energy: f32,
     pub avg_age: f32,
     pub total_food: u64,
-    
+    pub population_herbivore: u64,
+    pub population_carnivore: u64,
+
     // entity management
     next_creature_id: usize,
     /// bitmap:
     ///    0b0001 = exists/alive
     ///    0b0010 = can_reproduce
+    ///    0b0100 = herbivore
+    ///    0b1000 = carnivore
     creatures: Vec<u8>,
-    
+    /// pos,orientation,size
+    dead_creatures: VecDeque<(Coordinate,f32,f32)>,
+
     // light components
     positions: Vec<Coordinate>,
     orientations: Vec<f32>,
@@ -87,7 +98,8 @@ impl World {
                 paused: true,
                 world: SimParamWorld {
                     max_population      : c::MAX_POPULATION,
-                    min_population      : c::MIN_POPULATION,
+                    min_population_herb : c::MIN_POPULATION_HERBIVORE,
+                    min_population_carn : c::MIN_POPULATION_CARNIVORE,
                     food_regrowth_amount: c::FOOD_REGROWTH_AMOUNT,
                     food_regrowth_ticks : c::FOOD_REGROWTH_TICKS,
                 },
@@ -124,8 +136,10 @@ impl World {
             seed: rng_seed,
             deaths: 0,
             births: 0,
-            eat_success: 0,
-            eat_failed: 0,
+            herbivore_eat_success: 0,
+            herbivore_eat_failed: 0,
+            carnivore_eat_success: 0,
+            carnivore_eat_failed: 0,
             reproduce_success: 0,
             reproduce_failed_age: 0,
             reproduce_failed_energy: 0,
@@ -133,9 +147,13 @@ impl World {
             avg_energy: 0.0,
             avg_age: 0.0,
             total_food: 0,
+            population_herbivore: 0,
+            population_carnivore: 0,
             next_creature_id: 0,
             spatial_map: SpatialHashmap::new(),
+            carrion_map: SpatialHashmap::new(),
             creatures: Vec::with_capacity(c::MAX_POPULATION),
+            dead_creatures: VecDeque::with_capacity(c::MAX_POPULATION),
             positions: Vec::with_capacity(c::MAX_POPULATION),
             orientations: Vec::with_capacity(c::MAX_POPULATION),
             energies: Vec::with_capacity(c::MAX_POPULATION),
@@ -160,12 +178,24 @@ impl World {
     /// let the world tick
     pub fn tick(&mut self) {
         
-        if self.creatures.len() < self.params.world.min_population {
-            let center_x: f32 = c::WORLD_WIDTH as f32 / 2.0;
-            let center_y: f32 = c::WORLD_HEIGHT as f32 / 2.0;
-            let rng_x = self.rng.gen_range((center_x - 10.0)..(center_x + 10.0));
-            let rng_y = self.rng.gen_range((center_y - 10.0)..(center_y + 10.0));
-            self.spawn_creature(None, Some(Coordinate { x: rng_x, y: rng_y }));
+        if (self.population_herbivore as usize) < self.params.world.min_population_herb {
+            // let center_x: f32 = c::WORLD_WIDTH as f32 / 2.0;
+            // let center_y: f32 = c::WORLD_HEIGHT as f32 / 2.0;
+            // let rng_x = self.rng.gen_range((center_x - 10.0)..(center_x + 10.0));
+            // let rng_y = self.rng.gen_range((center_y - 10.0)..(center_y + 10.0));
+            let rng_x = self.rng.gen_range(10.0..30.0);
+            let rng_y = self.rng.gen_range(10.0..30.0);
+            self.spawn_creature_herbivore(Some(Coordinate { x: rng_x, y: rng_y }));
+            // self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
+        }
+        if (self.population_carnivore as usize) < self.params.world.min_population_carn {
+            // let center_x: f32 = c::WORLD_WIDTH as f32 / 2.0;
+            // let center_y: f32 = c::WORLD_HEIGHT as f32 / 2.0;
+            // let rng_x = self.rng.gen_range((center_x - 10.0)..(center_x + 10.0));
+            // let rng_y = self.rng.gen_range((center_y - 10.0)..(center_y + 10.0));
+            let rng_x = self.rng.gen_range(10.0..30.0);
+            let rng_y = self.rng.gen_range(10.0..30.0);
+            self.spawn_creature_carnivore(Some(Coordinate { x: rng_x, y: rng_y }));
             // self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
         }
 
@@ -211,19 +241,47 @@ impl World {
         let new_creature_brain_input: u64 = 0;
         let new_creature_brain_output: u64 = 0;
 
-        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(256, &mut self.rng)); // we had with 384 bytes
+        let new_creature_dna: Dna = dna.unwrap_or_else(|| Dna::random(512, &mut self.rng)); // we had 256 bytes which work out good
         let new_creature_genome: Genome = Genome::from_dna(&new_creature_dna);
         let new_creature_brain: Brain = Brain::recompile(&new_creature_genome);
         let new_size: f32 = 0.1 + (0.9 * (new_creature_dna.bytes[0] as f32 / 255.0)); // size between 0.1 and 1.0 based on a dna byte
-        let new_creature_color: [u8; 3] = [
-            new_creature_dna.bytes[1],
-            new_creature_dna.bytes[2],
-            new_creature_dna.bytes[3]
-        ];
+        
+        
+        let gene_values_kind: Vec<f64> = new_creature_dna.bytes.chunks_exact(8).skip(9)
+            .map(|chunk| chunk[5] as f64).collect();
+        let gene_values_threshold: Vec<f64> = new_creature_dna.bytes.chunks_exact(8).skip(9)
+            .map(|chunk| chunk[6] as f64).collect();
+        let gene_values_targetbit: Vec<f64> = new_creature_dna.bytes.chunks_exact(8).skip(9)
+            .map(|chunk| chunk[7] as f64).collect();
+
+        let creature_value: u8;
+        let new_creature_color: [u8; 3];
+        if new_creature_dna.bytes[4] <= 127 {
+            // herbivore
+            creature_value = c::CREATURE_BITFLAG_IS_ALIVE | c::CREATURE_BITFLAG_IS_HERBIVORE;
+            new_creature_color = [
+                ((gene_values_kind.iter().sum::<f64>() % 256.0) as u8).clamp(0,150),
+                (gene_values_threshold.iter().sum::<f64>() * 2.0 % 256.0) as u8,
+                ((gene_values_targetbit.iter().sum::<f64>() * 3.5 % 256.0) as u8).clamp(150,255)
+            ];
+        } else {
+            // carnivore
+            creature_value = c::CREATURE_BITFLAG_IS_ALIVE | c::CREATURE_BITFLAG_IS_CARNIVORE;
+            new_creature_color = [
+                ((gene_values_kind.iter().sum::<f64>() % 256.0) as u8).clamp(150,255),
+                (gene_values_threshold.iter().sum::<f64>() * 2.0 % 256.0) as u8,
+                ((gene_values_targetbit.iter().sum::<f64>() * 3.5 % 256.0) as u8).clamp(0,150)
+            ];
+        }
+        // let new_creature_color: [u8; 3] = [
+        //     new_creature_dna.bytes[1],
+        //     new_creature_dna.bytes[2],
+        //     new_creature_dna.bytes[3]
+        // ];
         let new_creature_reproduce_cooldown: u64 = self.tick_counter + self.params.creature.reproduce_age_min - 10 + (self.rng.gen_range(0..20));
 
         // we trust, that all vectors are aligned, so new creatures and its components will just be pushed at the end of the vectors
-        self.creatures.push(0b0000_0001);
+        self.creatures.push(creature_value);
         self.positions.push(new_creature_position);
         self.orientations.push(new_orientation);
         self.energies.push(new_creature_energy);
@@ -237,6 +295,22 @@ impl World {
         self.reproduce_cooldown.push(new_creature_reproduce_cooldown);
 
         true // return successfully spawned
+    }
+
+    /******************************************************************************************************************************************/
+    /// Spawn a herbivore creature
+    pub fn spawn_creature_herbivore(&mut self, position: Option<Coordinate>) {
+        let mut new_creature_dna: Dna = Dna::random(512, &mut self.rng);
+        new_creature_dna.bytes[4] = 90; // ensure herbivore bit is set
+        self.spawn_creature(Some(new_creature_dna), position);
+    }
+    
+    /******************************************************************************************************************************************/
+    /// Spawn a carnivore creature
+    pub fn spawn_creature_carnivore(&mut self, position: Option<Coordinate>) {
+        let mut new_creature_dna: Dna = Dna::random(512, &mut self.rng);
+        new_creature_dna.bytes[4] = 150; // ensure carnivore bit is set
+        self.spawn_creature(Some(new_creature_dna), position);
     }
 
     /******************************************************************************************************************************************/
@@ -288,12 +362,16 @@ impl World {
             total_food: self.total_food,
             births: self.births,
             deaths: self.deaths,
-            eat_success: self.eat_success,
-            eat_failed: self.eat_failed,
+            herbivore_eat_success: self.herbivore_eat_success,
+            herbivore_eat_failed: self.herbivore_eat_failed,
+            carnivore_eat_success: self.carnivore_eat_success,
+            carnivore_eat_failed: self.carnivore_eat_failed,
             reproduce_success: self.reproduce_success,
             reproduce_failed_age: self.reproduce_failed_age,
             reproduce_failed_energy: self.reproduce_failed_energy,
             reproduce_failed_cooldown: self.reproduce_failed_cooldown,
+            population_herbivore: self.population_herbivore,
+            population_carnivore: self.population_carnivore,
         }
     }
     
@@ -327,6 +405,23 @@ impl World {
                 size,
                 color,
                 orientation,
+            });
+        }
+
+        result
+    }
+    
+    /******************************************************************************************************************************************/
+    /// export a view of the dead creatures for the webserver
+    pub fn get_dead_creatures_view(&self) -> Vec<DeadCreatureView> {
+
+        let mut result = Vec::with_capacity(self.dead_creatures.len());
+        for (pos,orientation,size) in self.dead_creatures.iter() {
+            result.push(DeadCreatureView {
+                x: pos.x as f32,
+                y: pos.y as f32,
+                orientation: *orientation,
+                size: *size,
             });
         }
 
@@ -383,12 +478,15 @@ impl World {
         let positions = &self.positions;
         let orientations = &self.orientations;
         let creatures = &self.creatures;
+        let dead_creatures = &self.dead_creatures;
         let sizes = &self.sizes;
         let brain_outputs = &self.brain_outputs;
         let ages = &self.ages;
         let tick_counter = &self.tick_counter;
         let food_map = &self.food_map;
         let terrain_map = &self.terrain_map;
+        let spatial_map = &self.spatial_map;
+        let carrion_map = &self.carrion_map;
         let max_speed = self.params.creature.speed_sprint;
 
         self.brain_inputs
@@ -415,10 +513,11 @@ impl World {
                 *input |= ((pos.y > (c::BRAIN_INPUTS_BUCKET_POSY_C_B as f32)) as u64) << 5;
 
                 let (heavy_terrain_ahead_left, heavy_terrain_ahead_right) = Self::check_heavy_terrain_ahead(pos, orientations[entity_id], terrain_map, max_speed);
-                // #07 unused
+                // #07 heavy_terrain_ahead_left
                 *input |= (heavy_terrain_ahead_left as u64) << 6;
-                // #08 unused
+                // #08 heavy_terrain_ahead_right
                 *input |= (heavy_terrain_ahead_right as u64) << 7;
+                
                 // #09 unused
                 // *input |= something else << 8;
                 // #10 unused
@@ -442,27 +541,38 @@ impl World {
                 // #17 age high
                 *input |= (((*tick_counter - ages[entity_id]) >= c::BRAIN_INPUTS_BUCKET_AGE_MID_HIGH) as u64) << 16;
                 
-                // #18 unused
-                // *input |= something else << 17;
+                // #18 others nearby (are there other creatures in the 8 surrounding tiles?)
+                *input |= ((spatial_map.get_creatures_in_cell_with_neighbors(*pos).len() > 0) as u64) << 17;
 
-                // #19 can eat (is there food at the current position?)
-                *input |= ((food_map[(pos.y as usize).clamp(0,c::WORLD_HEIGHT as usize - 1) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,c::WORLD_WIDTH as usize - 1)] > 0) as u64) << 18;
-                
-                // #20 are we facing the border;
+                // #20 are we facing the border; #19 comes below, as we're handling herbivore and canivor specific below
                 *input |= (Self::check_border_ahead(pos, orientations[entity_id], max_speed) as u64) << 19;
+                
+                let max_energy = 90.0 + (sizes[entity_id] * 100.0);
+                // #24 90% of max_energy reached
+                *input |= ((energies[entity_id] >= max_energy * 0.9) as u64) << 23;
 
-                // check food ahead! we can check the 3 tiles ahead in a cone, and encode that information in 2 bits for more_food_ahead_left and more_food_ahead_right
-                let (food_ahead_left, food_ahead_center, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], food_map, max_speed);
+                let can_eat: bool;
+                let food_ahead_left: bool;
+                let food_ahead_right: bool;
+                let food_ahead_center: bool;
+
+                if Self::is_herbivore(&creatures[entity_id]) {
+                    can_eat = food_map[(pos.y as usize).clamp(0,c::WORLD_HEIGHT as usize - 1) * (c::WORLD_WIDTH as usize) + (pos.x as usize).clamp(0,c::WORLD_WIDTH as usize - 1)] > 0;
+                    (food_ahead_left, food_ahead_center, food_ahead_right) = Self::check_food_ahead(pos, orientations[entity_id], food_map, max_speed);
+                } else {
+                    (can_eat, _) = Self::can_eat_carrion(carrion_map, pos, dead_creatures);
+                    (food_ahead_left, food_ahead_center, food_ahead_right) = Self::check_carrion_nearby(pos, orientations[entity_id], carrion_map, dead_creatures, max_speed);
+                    
+                }
+                
+                // #19 can eat (is there food at the current position?)
+                *input |= (can_eat as u64) << 18;
                 // #21 more food ahead left
                 *input |= (food_ahead_left  as u64) << 20;
                 // #22 more food ahead right
                 *input |= (food_ahead_right as u64) << 21;
                 // #23 more food far ahead (in the center)
                 *input |= (food_ahead_center as u64) << 22;
-
-                let max_energy = 90.0 + (sizes[entity_id] * 100.0);
-                // #24 90% of max_energy reached
-                *input |= ((energies[entity_id] >= max_energy * 0.9) as u64) << 23;
 
         });
 
@@ -604,6 +714,22 @@ impl World {
             std::mem::replace(&mut self.pending_eat, Vec::with_capacity(self.params.world.max_population));
         for (entity_id, _action) in pending_eat {
             let pos = &self.positions[entity_id];
+
+            if Self::is_carnivore(&self.creatures[entity_id]) {
+                let (can_eat, carrion_index) = Self::can_eat_carrion(&self.carrion_map, pos, &self.dead_creatures);
+                if can_eat {
+                    let carrion_nutrition = self.dead_creatures[carrion_index].2 * 20.0;
+                    self.pending_energy_costs.push((entity_id, -carrion_nutrition)); // negative cost => energy gain
+                    self.carrion_map.remove(carrion_index,self.dead_creatures[carrion_index].0);
+                    self.dead_creatures[carrion_index].2 = 0.0; // mark as eaten - we can only remove it later
+                    self.carnivore_eat_success += 1;
+                    continue;
+                } else {
+                    self.carnivore_eat_failed += 1;
+                    continue;
+                }
+            }
+
             let (has_food, index, food_amount) = Self::has_food(&self.food_map, pos);
             if has_food {
                 let food_eaten = (self.params.energy.cost_eat.abs() as u8).min(food_amount); // we can only eat as much food as there is, and we want to eat at most the absolute value of the energy cost
@@ -613,12 +739,16 @@ impl World {
                 if self.terrain_map[index] == 1 { // it's a swamp
                     nutrition_value *= 3.0;
                 }
+                nutrition_value *= 1.0 + (self.spatial_map.get_creatures_in_cell_with_neighbors(*pos).len() as f32 * 0.1);
                 self.pending_energy_costs.push((entity_id, nutrition_value)); // negative cost => energy gain
-                self.eat_success += 1;
+                self.herbivore_eat_success += 1;
                 continue;
             }
-            self.eat_failed += 1;
+            self.herbivore_eat_failed += 1;
         }
+
+        // remove eaten ones
+        self.dead_creatures.retain(|&(_, _, size)| size > 0.0);
     }
 
     /******************************************************************************************************************************************/
@@ -654,6 +784,10 @@ impl World {
                     
                     if Self::get_biome(&self.terrain_map, &self.positions[*entity_id]) == 1 { // it's a swamp
                         energy *= 3.0;
+                    }
+
+                    if Self::is_carnivore(&self.creatures[*entity_id]) {
+                        energy *= 0.5; // carnivores get a movement bonus
                     }
                     self.pending_energy_costs.push((*entity_id, energy));
                     
@@ -790,6 +924,16 @@ impl World {
         deaths.sort_unstable_by(|a, b| b.cmp(a));
         deaths.dedup();
         for entity_id in deaths {
+            
+            if self.dead_creatures.len() > self.params.world.max_population - 10 {
+                for _ in 0..10 { self.dead_creatures.pop_front(); }
+            }
+            let pos = self.positions[entity_id];
+            let orientation = self.orientations[entity_id];
+            let size = self.sizes[entity_id];
+            
+            self.dead_creatures.push_back((pos, orientation, size));
+
             self.delete_creature(entity_id);
         }
     }
@@ -804,6 +948,14 @@ impl World {
                 spatial_map.insert(entity_id, position);
         });
         self.spatial_map = spatial_map;
+
+        let mut carrion_map = SpatialHashmap::new();
+        let dead_creatures = &self.dead_creatures;
+
+        dead_creatures.iter().enumerate().for_each(|(index, &(position, _, _))| {
+                carrion_map.insert(index, position);
+        });
+        self.carrion_map = carrion_map;
     }
     
     /******************************************************************************************************************************************/
@@ -811,42 +963,51 @@ impl World {
     #[allow(dead_code)]
     fn handle_separation(&mut self) {
         // collect adjustments locally as we shouldn't apply them immediately in the parallel loop
-        let mut position_adjustments: Vec<(usize, f32, f32)> = vec![(0, 0.0, 0.0); self.creatures.len()];
-        
-        position_adjustments.par_iter_mut().with_min_len(100).enumerate().for_each(|(id, adjustment)| {
-            let pos = self.positions[id];
-            let size = self.sizes[id];
-            let neighbors = self.spatial_map.get_creatures_in_cell(pos);
-            
-            for &other_id in &neighbors {
-                if id >= other_id { continue; } // prevent double checking pairs and self-checking
+        let position_adjustments: Vec<(usize, f32, f32)> = (0..self.creatures.len())
+            .into_par_iter()
+            .with_min_len(100)
+            .filter_map(|id| {
+                let mut dx = 0.0;
+                let mut dy = 0.0;
                 
-                let other_pos = self.positions[other_id];
-                let other_size = self.sizes[other_id];
-                let dx = pos.x - other_pos.x;
-                let dy = pos.y - other_pos.y;
-                let distance_sqr = dx * dx + dy * dy;
-                let min_distance = (size + other_size) as f32;
-                let min_distance_sqr = min_distance * min_distance;
+                let pos = self.positions[id];
+                let size = self.sizes[id];
+                let neighbors = self.spatial_map.get_creatures_in_cell_with_neighbors(pos);
                 
-                if distance_sqr >= min_distance_sqr || distance_sqr == 0.0 { continue; }
+                for &other_id in &neighbors {
+                    if id >= other_id { continue; }
+                    
+                    let other_pos = self.positions[other_id];
+                    let other_size = self.sizes[other_id];
+                    let dx_raw = pos.x - other_pos.x;
+                    let dy_raw = pos.y - other_pos.y;
+                    let distance_sqr = dx_raw * dx_raw + dy_raw * dy_raw;
+                    let min_distance = (size + other_size) as f32;
+                    let min_distance_sqr = min_distance * min_distance;
+                    
+                    if distance_sqr >= min_distance_sqr || distance_sqr == 0.0 { continue; }
+                    
+                    let distance = distance_sqr.sqrt();
+                    let overlap = min_distance - distance;
+                    let nx = dx_raw / distance;
+                    let ny = dy_raw / distance;
+                    
+                    dx += nx * overlap / 2.0;
+                    dy += ny * overlap / 2.0;
+                }
                 
-                let distance = distance_sqr.sqrt();
-                let overlap = min_distance - distance;
-                let nx = dx / distance;
-                let ny = dy / distance;
-                let half_overlap = overlap / 2.0;
-                
-                adjustment.0 = id;
-                adjustment.1 += nx * half_overlap;
-                adjustment.2 += ny * half_overlap;
-                
+                if dx != 0.0 || dy != 0.0 {
+                    Some((id, dx, dy))
+                } else {
+                    None
+                }
             }
-        });
+        )
+        .collect();
         
         // apply the collected adjustments
         for (id, dx, dy) in position_adjustments {
-            if id != 0 || dx != 0.0 || dy != 0.0 {
+            if dx != 0.0 || dy != 0.0 {
                 self.positions[id].x = (self.positions[id].x + dx).clamp(0.0, c::WORLD_WIDTH as f32);
                 self.positions[id].y = (self.positions[id].y + dy).clamp(0.0, c::WORLD_HEIGHT as f32);
             }
@@ -889,6 +1050,22 @@ impl World {
         self.avg_age = self.tick_counter as f32 - (total_age as f32 / self.creatures.len().max(1) as f32);
 
         self.total_food = self.food_map.par_iter().map(|&b| b as u64).sum();
+
+        (self.population_carnivore, self.population_herbivore) = self.creatures.par_iter().fold(
+            || (0u64, 0u64),
+            |(mut carnivores, mut herbivores), &creature| {
+                if Self::is_carnivore(&creature) {
+                    carnivores += 1;
+                }
+                if Self::is_herbivore(&creature) {
+                    herbivores += 1;
+                }
+                (carnivores, herbivores)
+            },
+        ).reduce(
+            || (0u64, 0u64),
+            |(c1, h1), (c2, h2)| (c1 + c2, h1 + h2)
+        );
     }
 }
 
@@ -953,6 +1130,21 @@ impl World {
     }
 
     /******************************************************************************************************************************************/
+    /// checks if it's a herbivore
+    #[inline(always)]
+    fn is_herbivore(creature: &u8) -> bool {
+        (*creature & c::CREATURE_BITFLAG_IS_HERBIVORE) != 0
+    }
+
+    /******************************************************************************************************************************************/
+    /// checks if it's a carnivore
+    #[allow(dead_code)]
+    #[inline(always)]
+    fn is_carnivore(creature: &u8) -> bool {
+        (*creature & c::CREATURE_BITFLAG_IS_CARNIVORE) != 0
+    }
+    
+    /******************************************************************************************************************************************/
     /// returns the current biome
     #[inline(always)]
     fn get_biome(terrain_map: &Vec<u8>, pos: &Coordinate) -> u8 {
@@ -975,7 +1167,7 @@ impl World {
     /// check whether there's heavy terrain ahead
     #[inline(always)]
     fn check_heavy_terrain_ahead(pos: &Coordinate, orientation: f32, terrain_map: &Vec<u8>, max_speed: f32) -> (bool, bool) {
-        let look_ahead_distance = max_speed * 2.0; // twice the distance reachable with sprint
+        let look_ahead_distance = (max_speed * 2.0).max(1.1415) * 1.5; // twice the distance reachable with sprint
 
         let left_cone_angle  = orientation + std::f32::consts::FRAC_PI_4; // 45 degrees to the left
         let right_cone_angle = orientation - std::f32::consts::FRAC_PI_4; // 45 degrees to the right
@@ -992,10 +1184,96 @@ impl World {
     }
 
     /******************************************************************************************************************************************/
+    /// check whether there's carrion at the current location
+    /// returns (can_eat & index for dead_creatures)
+    fn can_eat_carrion(carrion_map: &SpatialHashmap, pos: &Coordinate, dead_creatures: &VecDeque<(Coordinate,f32,f32)>) -> (bool, usize) {
+        let carrion_ids = carrion_map.get_creatures_in_cell(*pos);
+        for &id in &carrion_ids {
+            if let Some((carrion_pos, _, size)) = dead_creatures.get(id) {
+                if *size > 0.0 {  // Nur essbar, wenn Größe > 0
+                    let distance_sqr = (carrion_pos.x - pos.x).powi(2) + (carrion_pos.y - pos.y).powi(2);
+                    if distance_sqr < size.powi(2) {
+                        return (true, id);
+                    }
+                }
+            }
+        }
+        (false, 0)
+    }
+    /******************************************************************************************************************************************/
+    /// check whether there's carrion ahead
+    /// returns (carrion_ahead_left, carrion_ahead_center, carrion_ahead_right)
+    #[inline(always)]
+    fn check_carrion_nearby(pos: &Coordinate, orientation: f32, carrion_map: &SpatialHashmap, dead_creatures: &VecDeque<(Coordinate,f32,f32)>, max_speed: f32) -> (bool, bool, bool) {
+        let look_ahead_distance = (max_speed * 2.0).max(1.1415);
+        let left_cone_angle  = orientation + std::f32::consts::FRAC_PI_4; // 45 degrees to the left
+        let right_cone_angle = orientation - std::f32::consts::FRAC_PI_4; // 45 degrees to the right
+
+        let left_cone  = Coordinate {
+            x: pos.x + left_cone_angle.cos() * look_ahead_distance,
+            y: pos.y + left_cone_angle.sin() * look_ahead_distance
+        };
+        let right_cone = Coordinate {
+            x: pos.x + right_cone_angle.cos() * look_ahead_distance,
+            y: pos.y + right_cone_angle.sin() * look_ahead_distance
+        };
+
+        let carrion_ids = carrion_map.get_creatures_in_cell_with_neighbors(*pos);
+        // pos, orientation, size
+        // let local_carrion = carrion_ids.iter().filter_map(|&id| dead_creatures.get(id));
+        
+        let mut carrion_ahead_left = false;
+        let mut carrion_ahead_right = false;
+        let mut carrion_ahead_center = false;
+
+        for carrion_id in carrion_ids {
+            if carrion_ahead_left && carrion_ahead_right && carrion_ahead_center { break; } // we found all
+            if let Some((carrion_pos, _, size)) = dead_creatures.get(carrion_id) {
+                if *size <= 0.0 { continue; } // only eatable if size > 0
+                let dx = carrion_pos.x - pos.x;
+                let dy = carrion_pos.y - pos.y;
+                let distance_sqr = dx * dx + dy * dy;
+                let look_ahead_sq = (look_ahead_distance + size).powi(2);
+                if distance_sqr > look_ahead_sq { continue; } // out of reach
+                
+                
+                if !carrion_ahead_left {
+                    let dxl = carrion_pos.x - left_cone.x;
+                    let dyl = carrion_pos.y - left_cone.y;
+                    if dxl * dxl + dyl * dyl < look_ahead_sq {
+                        carrion_ahead_left = true;
+                    }
+                }
+                
+                if !carrion_ahead_right {
+                    let dxl = carrion_pos.x - right_cone.x;
+                    let dyl = carrion_pos.y - right_cone.y;
+                    if dxl * dxl + dyl * dyl < look_ahead_sq {
+                        carrion_ahead_right = true;
+                    }
+                }
+
+                if !carrion_ahead_center {
+                    let forward_dist = dx * orientation.cos() + dy * orientation.sin();
+                    if forward_dist > 0.0 && forward_dist <= look_ahead_distance + *size {
+                        let lateral = -dx * orientation.sin() + dy * orientation.cos();
+                        if lateral.abs() <= *size {
+                            carrion_ahead_center = true;
+                        }
+                    }
+                }
+                
+            }
+        }
+
+        (carrion_ahead_left, carrion_ahead_center, carrion_ahead_right)
+    }
+
+    /******************************************************************************************************************************************/
     /// check whether there's food ahead in the current direction (left, center, right)
     #[inline(always)]
     fn check_food_ahead(pos: &Coordinate, orientation: f32, food_map: &Vec<u8>, max_speed: f32) -> (bool, bool, bool) {
-        let look_ahead_distance = max_speed * 2.0; // 100% over the distance reachable with sprint
+        let look_ahead_distance = (max_speed * 2.0).max(1.1415); // 100% over the distance reachable with sprint, or at least 1.1415
         // let look_ahead_x = pos.x + orientation.cos() * look_ahead_distance;
         // let look_ahead_y = pos.y + orientation.sin() * look_ahead_distance;
 
@@ -1013,7 +1291,7 @@ impl World {
         // center will go far more ahead, but stops at the next food
         let mut center_x = pos.x;
         let mut center_y = pos.y;
-        for _ in 1..=10 {
+        for _ in 1..=20 {
             center_x += orientation.cos() * look_ahead_distance;
             center_y += orientation.sin() * look_ahead_distance;
             if Self::has_food(food_map, &Coordinate { x: center_x, y: center_y }).0 {
@@ -1067,7 +1345,7 @@ impl World {
                     strength_factor = 0.5;
                 } else {
                     min_fertility = 50;
-                    max_fertility = 150;
+                    max_fertility = 100;
                     strength_factor = 1.25;
                 }
 
