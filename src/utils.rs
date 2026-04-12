@@ -23,7 +23,8 @@ pub struct SimParams {
 #[derive(Clone, Copy, Serialize, serde::Deserialize)]
 pub struct SimParamWorld {
     pub max_population: usize,
-    pub min_population: usize,
+    pub min_population_herb: usize,
+    pub min_population_carn: usize,
     pub food_regrowth_amount: u8,
     pub food_regrowth_ticks: u64,
 }
@@ -100,12 +101,16 @@ pub struct WorldStats {
     pub total_food: u64,
     pub births: u64,
     pub deaths: u64,
-    pub eat_success: u64,
-    pub eat_failed: u64,
+    pub herbivore_eat_success: u64,
+    pub herbivore_eat_failed: u64,
+    pub carnivore_eat_success: u64,
+    pub carnivore_eat_failed: u64,
     pub reproduce_success: u64,
     pub reproduce_failed_age: u64,
     pub reproduce_failed_energy: u64,
     pub reproduce_failed_cooldown: u64,
+    pub population_herbivore: u64,
+    pub population_carnivore: u64,
 }
 
 /****************************************************************************************************************/

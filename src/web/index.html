@@ -125,25 +125,29 @@
     <canvas id="world"></canvas>
     <div id="overlay">
         <table style="border: 0;">
-            <tr><td class="stat_cell_left">Zoom:</td>               <td class="stat_cell_right"><span id="zoom_value">                    -</span></td></tr>
-            <tr><td class="stat_cell_left">Camera:</td>             <td class="stat_cell_right"><span id="camera_value">                  -</span></td></tr>
-            <tr><td class="stat_cell_left">tick:</td>               <td class="stat_cell_right"><span id="stat_tick">                     -</span></td></tr>
+            <tr><td class="stat_cell_left">Zoom:</td>                 <td class="stat_cell_right"><span id="zoom_value">                    -</span></td></tr>
+            <tr><td class="stat_cell_left">Camera:</td>               <td class="stat_cell_right"><span id="camera_value">                  -</span></td></tr>
+            <tr><td class="stat_cell_left">tick:</td>                 <td class="stat_cell_right"><span id="stat_tick">                     -</span></td></tr>
             <tr><td colspan="2"><hr style="border-color: #555;"></td></tr>
-            <tr><td class="stat_cell_left">population:</td>         <td class="stat_cell_right"><span id="stat_population">               -</span></td></tr>
-            <tr><td class="stat_cell_left">births:</td>             <td class="stat_cell_right"><span id="stat_births">                   -</span></td></tr>
-            <tr><td class="stat_cell_left">deaths:</td>             <td class="stat_cell_right"><span id="stat_deaths">                   -</span></td></tr>
+            <tr><td class="stat_cell_left">population:</td>           <td class="stat_cell_right"><span id="stat_population">               -</span></td></tr>
+            <tr><td class="stat_cell_left">herbivores:</td>           <td class="stat_cell_right"><span id="stat_population_herbivore">     -</span></td></tr>
+            <tr><td class="stat_cell_left">carnivores:</td>           <td class="stat_cell_right"><span id="stat_population_carnivore">     -</span></td></tr>
+            <tr><td class="stat_cell_left">births:</td>               <td class="stat_cell_right"><span id="stat_births">                   -</span></td></tr>
+            <tr><td class="stat_cell_left">deaths:</td>               <td class="stat_cell_right"><span id="stat_deaths">                   -</span></td></tr>
             <tr><td colspan="2"><hr style="border-color: #555;"></td></tr>
-            <tr><td class="stat_cell_left">avg_energy:</td>         <td class="stat_cell_right"><span id="stat_avg_energy">               -</span></td></tr>
-            <tr><td class="stat_cell_left">avg_age:</td>            <td class="stat_cell_right"><span id="stat_avg_age">                  -</span></td></tr>
+            <tr><td class="stat_cell_left">avg_energy:</td>           <td class="stat_cell_right"><span id="stat_avg_energy">               -</span></td></tr>
+            <tr><td class="stat_cell_left">avg_age:</td>              <td class="stat_cell_right"><span id="stat_avg_age">                  -</span></td></tr>
             <tr><td colspan="2"><hr style="border-color: #555;"></td></tr>
-            <tr><td class="stat_cell_left">food available:</td>     <td class="stat_cell_right"><span id="stat_total_food">               -</span></td></tr>
-            <tr><td class="stat_cell_left">eat_success:</td>        <td class="stat_cell_right"><span id="stat_eat_success">              -</span></td></tr>
-            <tr><td class="stat_cell_left">eat_failed:</td>         <td class="stat_cell_right"><span id="stat_eat_failed">               -</span></td></tr>
+            <tr><td class="stat_cell_left">food available:</td>       <td class="stat_cell_right"><span id="stat_total_food">               -</span></td></tr>
+            <tr><td class="stat_cell_left">herbivore_eat_success:</td><td class="stat_cell_right"><span id="stat_herbivore_eat_success">    -</span></td></tr>
+            <tr><td class="stat_cell_left">herbivore_eat_failed:</td> <td class="stat_cell_right"><span id="stat_herbivore_eat_failed">     -</span></td></tr>
+            <tr><td class="stat_cell_left">carnivore_eat_success:</td><td class="stat_cell_right"><span id="stat_carnivore_eat_success">    -</span></td></tr>
+            <tr><td class="stat_cell_left">carnivore_eat_failed:</td> <td class="stat_cell_right"><span id="stat_carnivore_eat_failed">     -</span></td></tr>
             <tr><td colspan="2"><hr style="border-color: #555;"></td></tr>
-            <tr><td class="stat_cell_left">repro_success:</td>      <td class="stat_cell_right"><span id="stat_reproduce_success">        -</span></td></tr>
-            <tr><td class="stat_cell_left">repro_err_age:</td>      <td class="stat_cell_right"><span id="stat_reproduce_failed_age">     -</span></td></tr>
-            <tr><td class="stat_cell_left">repro_err_energy:</td>   <td class="stat_cell_right"><span id="stat_reproduce_failed_energy">  -</span></td></tr>
-            <tr><td class="stat_cell_left">repro_err_cooldown:</td> <td class="stat_cell_right"><span id="stat_reproduce_failed_cooldown">-</span></td></tr>
+            <tr><td class="stat_cell_left">repro_success:</td>        <td class="stat_cell_right"><span id="stat_reproduce_success">        -</span></td></tr>
+            <tr><td class="stat_cell_left">repro_err_age:</td>        <td class="stat_cell_right"><span id="stat_reproduce_failed_age">     -</span></td></tr>
+            <tr><td class="stat_cell_left">repro_err_energy:</td>     <td class="stat_cell_right"><span id="stat_reproduce_failed_energy">  -</span></td></tr>
+            <tr><td class="stat_cell_left">repro_err_cooldown:</td>   <td class="stat_cell_right"><span id="stat_reproduce_failed_cooldown">-</span></td></tr>
         </table>
     </div>
     <div id="creature-details" style="display: none;">
@@ -163,7 +167,8 @@
             <table style="width: 100%; border-collapse: collapse;">
                 <tr><td>Target TPS</td><td><input type="range" id="tps-slider" class="control-slider" min="25" max="500" step="25" value="25" style="width: 80%;"><span id="tps-value" class="control-slider-value">25</span></td></tr>
                 <tr><td>Max population</td><td><input id="param_max_population" type="number" min="1" max="10000" step="1" style="width: 100%;"></td></tr>
-                <tr><td>Min population</td><td><input id="param_min_population" type="number" min="0" max="10000" step="1" style="width: 100%;"></td></tr>
+                <tr><td>Min pop herbivores</td><td><input id="param_min_population_herb" type="number" min="0" max="10000" step="1" style="width: 100%;"></td></tr>
+                <tr><td>Min pop carnivores</td><td><input id="param_min_population_carn" type="number" min="0" max="10000" step="1" style="width: 100%;"></td></tr>
                 <tr><td>Food regrowth amount</td><td><input id="param_food_regrowth_amount" type="number" min="0" max="255" step="1" style="width: 100%;"></td></tr>
                 <tr><td>Food regrowth ticks</td><td><input id="param_food_regrowth_ticks" type="number" min="1" max="10000" step="1" style="width: 100%;"></td></tr>
                 <tr><td>Cost eat</td><td><input id="param_cost_eat" type="number" min="0" max="100" step="0.1" style="width: 100%;"></td></tr>
@@ -428,7 +433,7 @@
         const deadCreatureFragmentShaderSource = `
         precision mediump float;       
         void main() {
-            gl_FragColor = vec4(0.6,0.3,0.3,0.6);
+            gl_FragColor = vec4(0.6,0.3,0.3,0.2);
         }
         `;
         
@@ -949,13 +954,17 @@
             const data = await response.json();
             document.getElementById("stat_tick").textContent = data.tick.toLocaleString();
             document.getElementById("stat_population").textContent = data.population.toLocaleString();
+            document.getElementById("stat_population_herbivore").textContent = data.population_herbivore.toLocaleString();
+            document.getElementById("stat_population_carnivore").textContent = data.population_carnivore.toLocaleString();
             document.getElementById("stat_avg_energy").textContent = Number(data.avg_energy.toFixed(2)).toLocaleString();
             document.getElementById("stat_avg_age").textContent = Number(data.avg_age.toFixed(2)).toLocaleString();
             document.getElementById("stat_total_food").textContent = data.total_food.toLocaleString();
             document.getElementById("stat_births").textContent = data.births.toLocaleString();
             document.getElementById("stat_deaths").textContent = data.deaths.toLocaleString();
-            document.getElementById("stat_eat_success").textContent = data.eat_success.toLocaleString();
-            document.getElementById("stat_eat_failed").textContent = data.eat_failed.toLocaleString();
+            document.getElementById("stat_herbivore_eat_success").textContent = data.herbivore_eat_success.toLocaleString();
+            document.getElementById("stat_herbivore_eat_failed").textContent = data.herbivore_eat_failed.toLocaleString();
+            document.getElementById("stat_carnivore_eat_success").textContent = data.carnivore_eat_success.toLocaleString();
+            document.getElementById("stat_carnivore_eat_failed").textContent = data.carnivore_eat_failed.toLocaleString();
             document.getElementById("stat_reproduce_success").textContent = data.reproduce_success.toLocaleString();
             document.getElementById("stat_reproduce_failed_age").textContent = data.reproduce_failed_age.toLocaleString();
             document.getElementById("stat_reproduce_failed_energy").textContent = data.reproduce_failed_energy.toLocaleString();
@@ -977,7 +986,8 @@
         const tpsValue = document.getElementById("tps-value");
 
         const param_max_population = document.getElementById("param_max_population");
-        const param_min_population = document.getElementById("param_min_population");
+        const param_min_population_herb = document.getElementById("param_min_population_herb");
+        const param_min_population_carn = document.getElementById("param_min_population_carn");
         const param_food_regrowth_amount = document.getElementById("param_food_regrowth_amount");
         const param_food_regrowth_ticks = document.getElementById("param_food_regrowth_ticks");
         const param_cost_eat = document.getElementById("param_cost_eat");
@@ -1030,7 +1040,8 @@
             updateButtonStates();
 
             param_max_population.value = params.world.max_population;
-            param_min_population.value = params.world.min_population;
+            param_min_population_herb.value = params.world.min_population_herb;
+            param_min_population_carn.value = params.world.min_population_carn;
             param_food_regrowth_amount.value = params.world.food_regrowth_amount;
             param_food_regrowth_ticks.value = params.world.food_regrowth_ticks;
 
@@ -1062,7 +1073,8 @@
             return {
                 world: {
                     max_population: Number(param_max_population.value),
-                    min_population: Number(param_min_population.value),
+                    min_population_herb: Number(param_min_population_herb.value),
+                    min_population_carn: Number(param_min_population_carn.value),
                     food_regrowth_amount: Number(param_food_regrowth_amount.value),
                     food_regrowth_ticks: Number(param_food_regrowth_ticks.value),
                 },

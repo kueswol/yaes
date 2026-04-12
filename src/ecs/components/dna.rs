@@ -28,7 +28,7 @@ impl Dna {
             rng.gen_range(0..255),   // color_r
             rng.gen_range(0..255),   // color_g
             rng.gen_range(0..255),   // color_b
-            rng.gen_range(0..255),   // unused
+            rng.gen_range(0..255),   // herbivore (<=127) /carnivore (>127)
             rng.gen_range(0..255),   // unused
             rng.gen_range(0..255),   // unused
             rng.gen_range(0..255),   // unused

@@ -49,7 +49,7 @@ fn initialize_world() -> World {
     let world = World::default();
 
     // println!("[MAIN ]: initializing world");
-    // world.spawn_random_creatures(500);
+    // world.spawn_random_creatures(1000);
 
     world
 }
