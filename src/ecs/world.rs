@@ -183,8 +183,8 @@ impl World {
             // let center_y: f32 = c::WORLD_HEIGHT as f32 / 2.0;
             // let rng_x = self.rng.gen_range((center_x - 10.0)..(center_x + 10.0));
             // let rng_y = self.rng.gen_range((center_y - 10.0)..(center_y + 10.0));
-            let rng_x = self.rng.gen_range(10.0..30.0);
-            let rng_y = self.rng.gen_range(10.0..30.0);
+            let rng_x = self.rng.gen_range(100.0..200.0);
+            let rng_y = self.rng.gen_range(100.0..200.0);
             self.spawn_creature_herbivore(Some(Coordinate { x: rng_x, y: rng_y }));
             // self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
         }
@@ -193,8 +193,8 @@ impl World {
             // let center_y: f32 = c::WORLD_HEIGHT as f32 / 2.0;
             // let rng_x = self.rng.gen_range((center_x - 10.0)..(center_x + 10.0));
             // let rng_y = self.rng.gen_range((center_y - 10.0)..(center_y + 10.0));
-            let rng_x = self.rng.gen_range(10.0..30.0);
-            let rng_y = self.rng.gen_range(10.0..30.0);
+            let rng_x = self.rng.gen_range(100.0..200.0);
+            let rng_y = self.rng.gen_range(100.0..200.0);
             self.spawn_creature_carnivore(Some(Coordinate { x: rng_x, y: rng_y }));
             // self.spawn_creature(None, Some(Coordinate { x: 30.0, y: 30.0 }));
         }
@@ -718,7 +718,7 @@ impl World {
             if Self::is_carnivore(&self.creatures[entity_id]) {
                 let (can_eat, carrion_index) = Self::can_eat_carrion(&self.carrion_map, pos, &self.dead_creatures);
                 if can_eat {
-                    let carrion_nutrition = self.dead_creatures[carrion_index].2 * 20.0;
+                    let carrion_nutrition = self.dead_creatures[carrion_index].2 * 200.0;
                     self.pending_energy_costs.push((entity_id, -carrion_nutrition)); // negative cost => energy gain
                     self.carrion_map.remove(carrion_index,self.dead_creatures[carrion_index].0);
                     self.dead_creatures[carrion_index].2 = 0.0; // mark as eaten - we can only remove it later
@@ -786,9 +786,9 @@ impl World {
                         energy *= 3.0;
                     }
 
-                    if Self::is_carnivore(&self.creatures[*entity_id]) {
-                        energy *= 0.5; // carnivores get a movement bonus
-                    }
+                    // if Self::is_carnivore(&self.creatures[*entity_id]) {
+                    //     energy *= 0.1; // carnivores get a movement bonus
+                    // }
                     self.pending_energy_costs.push((*entity_id, energy));
                     
                 }
@@ -874,7 +874,13 @@ impl World {
             }
 
             let energy = &mut self.energies[id];
-            let max_energy = 90.0 + (self.sizes[id] * 100.0); // max energy based on size
+            let mut max_energy = 90.0 + (self.sizes[id] * 100.0); // max energy based on size
+            
+            if Self::is_carnivore(&self.creatures[id]) {
+                total *= 0.1;
+                max_energy *= 2.0;
+            }
+            
             *energy = (*energy - total).clamp(-1.0, max_energy);
             if *energy <= 0.0 {
                 self.pending_deaths.push(id);
@@ -1192,7 +1198,7 @@ impl World {
             if let Some((carrion_pos, _, size)) = dead_creatures.get(id) {
                 if *size > 0.0 {  // Nur essbar, wenn Größe > 0
                     let distance_sqr = (carrion_pos.x - pos.x).powi(2) + (carrion_pos.y - pos.y).powi(2);
-                    if distance_sqr < size.powi(2) {
+                    if distance_sqr < size.powi(2) + 1.0 { // within reach (size of carrion + small margin)
                         return (true, id);
                     }
                 }
